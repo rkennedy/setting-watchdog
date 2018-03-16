@@ -9,10 +9,12 @@
 
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 #include <windows.h>
+#include <wtsapi32.h>
 
 #include <iostream>
 #include <iomanip>
 
+#include <boost/core/noncopyable.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <boost/format.hpp>
 #include <boost/log/attributes/named_scope.hpp>
