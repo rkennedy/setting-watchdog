@@ -54,6 +54,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>advapi32.lib;wtsapi32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
