@@ -217,6 +217,24 @@ std::map<DWORD, std::string> const session_change_codes{
     VALUE_NAME(WTS_SESSION_TERMINATE),
 };
 
+class SidFormatter: private boost::noncopyable
+{
+    PSID m_sid;
+    mutable LPSTR m_value;
+public:
+    SidFormatter(PSID sid): m_sid(sid), m_value(nullptr)
+    { }
+    ~SidFormatter()
+    {
+        LocalFree(m_value);
+    }
+    friend std::ostream& operator<<(std::ostream& os, SidFormatter const& sf) {
+        if (!sf.m_value)
+            WinCheck(ConvertSidToStringSidA(sf.m_sid, &sf.m_value));
+        return os << sf.m_value;
+    }
+};
+
 DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                             LPVOID lpEventData, LPVOID lpContext)
 {
@@ -262,11 +280,35 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                 case WTS_SESSION_LOGON:
                 {
                     assert(context->sessions.find(notification->dwSessionId) == context->sessions.end());
-                    // TODO Get SID of session
-                    WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, notification->dwSessionId, );
-                    boost::basic_format<TCHAR> subkey(TEXT("%1%\\Software\\Policies\\Microsoft\\Windows\\Control Panel\\Desktop"));
-                    context->sessions.emplace(notification->dwSessionId, std::move(RegKey(HKEY_USERS, (subkey % sid).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE)));
-                    SetEvent(context->SessionChange);
+                    // Get SID of session
+                    HANDLE session_token;
+                    WinCheck(WTSQueryUserToken(notification->dwSessionId, &session_token), "getting session token"); // TODO close session_token
+
+                    DWORD returned_length;
+                    GetTokenInformation(session_token, TokenLogonSid, nullptr, 0, &returned_length);
+
+                    std::vector<unsigned char> group_buffer(returned_length);
+                    WinCheck(GetTokenInformation(session_token, TokenLogonSid, group_buffer.data(), group_buffer.size(), &returned_length), "getting token information");
+                    auto const token_groups = reinterpret_cast<TOKEN_GROUPS*>(group_buffer.data());
+
+                    // Select the first SID for which the registry key exists.
+                    if (std::none_of(token_groups->Groups, token_groups->Groups + token_groups->GroupCount,
+                        [&context, &notification](SID_AND_ATTRIBUTES const* saa) {
+                            SidFormatter const sid(saa->Sid);
+                            try {
+                                boost::basic_format<TCHAR> subkey(TEXT("%1%\\Software\\Policies\\Microsoft\\Windows\\Control Panel\\Desktop"));
+                                BOOST_LOG_TRIVIAL(trace) << "session sid " << sid;
+                                context->sessions.emplace(notification->dwSessionId, std::move(RegKey(HKEY_USERS, (subkey % sid).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE)));
+                            } catch (std::system_error const& ex) {
+                                BOOST_LOG_TRIVIAL(warning) << "no registry key for sid " << sid;
+                                return false;
+                            }
+                            SetEvent(context->SessionChange);
+                            return true;
+                        }))
+                    {
+                        BOOST_LOG_TRIVIAL(warning) << "no user sid found for session " << notification->dwSessionId;
+                    }
                     break;
                 }
                 case WTS_SESSION_LOGOFF:
