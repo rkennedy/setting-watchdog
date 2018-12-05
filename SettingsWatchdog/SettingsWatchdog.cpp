@@ -78,6 +78,34 @@ public:
     { }
 };
 
+class AutoCloseHandle: private boost::noncopyable
+{
+private:
+    HANDLE m_handle;
+public:
+    explicit AutoCloseHandle(HANDLE handle = NULL):
+        m_handle(handle)
+    { }
+    AutoCloseHandle(AutoCloseHandle&& other):
+        m_handle(other.m_handle)
+    {
+        BOOST_LOG_FUNC();
+        other.m_handle = NULL;
+    }
+    ~AutoCloseHandle() {
+        BOOST_LOG_FUNC();
+        if (m_handle)
+            CloseHandle(m_handle);
+    }
+    HANDLE* operator&() {
+        return &m_handle;
+    }
+    operator HANDLE() const {
+        BOOST_LOG_FUNC();
+        return m_handle;
+    }
+};
+
 void InstallService()
 {
     BOOST_LOG_FUNC();
@@ -106,27 +134,12 @@ void UninstallService()
     BOOST_LOG_TRIVIAL(info) << "Service deleted";
 }
 
-class Event: private boost::noncopyable
+class Event: public AutoCloseHandle
 {
-private:
-    HANDLE m_handle;
 public:
     Event():
-        m_handle(WinCheck(CreateEvent(nullptr, true, false, nullptr), "creating event"))
+        AutoCloseHandle(WinCheck(CreateEvent(nullptr, true, false, nullptr), "creating event"))
     { }
-    Event(Event&& other):
-        m_handle(other.m_handle)
-    {
-        BOOST_LOG_FUNC();
-        other.m_handle = NULL;
-    }
-    ~Event() {
-        BOOST_LOG_FUNC();
-        CloseHandle(m_handle);
-    }
-    operator HANDLE() const {
-        return m_handle;
-    }
 };
 
 HKEY OpenRegKey(HKEY hKey, LPCTSTR lpSubKey, DWORD ulOptions, REGSAM samDesired)
@@ -290,7 +303,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                 {
                     assert(context->sessions.find(notification->dwSessionId) == context->sessions.end());
                     // Get SID of session
-                    HANDLE session_token;
+                    AutoCloseHandle session_token;
                     WinCheck(WTSQueryUserToken(notification->dwSessionId, &session_token), "getting session token");
 
                     DWORD returned_length;
@@ -318,7 +331,6 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                     {
                         BOOST_LOG_TRIVIAL(warning) << "no user sid found for session " << notification->dwSessionId;
                     }
-                    CloseHandle(session_token);  // TODO do this in a destructor
                     break;
                 }
                 case WTS_SESSION_LOGOFF:
