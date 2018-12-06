@@ -138,7 +138,10 @@ class Event: public AutoCloseHandle
 {
 public:
     Event():
-        AutoCloseHandle(WinCheck(CreateEvent(nullptr, true, false, nullptr), "creating event"))
+        AutoCloseHandle(WinCheck(CreateEvent(nullptr,
+                                             true, // bManualReset
+                                             false, // bInitialState
+                                             nullptr), "creating event"))
     { }
 };
 
@@ -192,6 +195,7 @@ struct SettingsWatchdogContext
     Event StopEvent;
     Event SessionChange;
     DWORD stopping_checkpoint;
+    std::mutex session_mutex;
     std::map<DWORD, SessionData> sessions;
 };
 
@@ -319,6 +323,8 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
             switch (dwEventType) {
                 case WTS_SESSION_LOGON:
                 {
+                    std::lock_guard<std::mutex> session_guard(context->session_mutex);
+
                     assert(context->sessions.find(notification->dwSessionId) == context->sessions.end());
                     // Get SID of session
                     AutoCloseHandle session_token;
@@ -344,6 +350,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                 }
                 case WTS_SESSION_LOGOFF:
                 {
+                    std::lock_guard<std::mutex> session_guard(context->session_mutex);
                     auto const it = context->sessions.find(notification->dwSessionId);
                     if (it == context->sessions.end()) {
                         BOOST_LOG_TRIVIAL(info) << "Session is not known. Ignored.";
@@ -405,6 +412,7 @@ void EstablishNotification(HKEY key, Event const& NotifyEvent)
 {
     BOOST_LOG_FUNC();
     BOOST_LOG_TRIVIAL(trace) << "Establishing notification";
+    WinCheck(ResetEvent(NotifyEvent), "resetting event");
     RegCheck(RegNotifyChangeKeyValue(
         key, true, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET,
         NotifyEvent, true), "establishing notification");
@@ -486,8 +494,11 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         do {
             std::vector<HANDLE> wait_handles{ system_notify_event, context.StopEvent, context.SessionChange };
             auto const FixedWaitObjectCount = wait_handles.size();
-            for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
-                wait_handles.push_back(it->second.notification);
+            {
+                std::lock_guard<std::mutex> session_guard(context.session_mutex);
+                for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
+                    wait_handles.push_back(it->second.notification);
+                }
             }
             if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
                 wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
@@ -521,6 +532,8 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 case WAIT_OBJECT_0 + 2:
                 {
                     BOOST_LOG_TRIVIAL(trace) << "Session list changed";
+                    WinCheck(ResetEvent(context.SessionChange), "resetting session event");
+                    std::lock_guard<std::mutex> session_guard(context.session_mutex);
                     for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
                         auto& session = it->second;
                         if (!session.running) {
@@ -540,6 +553,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 {
                     if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
                         auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
+                        std::lock_guard<std::mutex> session_guard(context.session_mutex);
                         if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
                             break;
                         }

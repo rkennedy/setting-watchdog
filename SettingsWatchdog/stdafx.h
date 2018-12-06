@@ -12,8 +12,14 @@
 #include <wtsapi32.h>
 #include <sddl.h>
 
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
+#include <map>
+#include <mutex>
+#include <string>
+#include <system_error>
+#include <vector>
 
 #include <boost/core/noncopyable.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
