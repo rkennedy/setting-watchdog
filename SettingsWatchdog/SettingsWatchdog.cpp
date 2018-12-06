@@ -195,7 +195,8 @@ struct SettingsWatchdogContext
     std::map<DWORD, SessionData> sessions;
 };
 
-std::map<DWORD, std::string> const control_names{
+std::map<DWORD, std::string> const control_names
+{
     VALUE_NAME(SERVICE_CONTROL_CONTINUE),
     VALUE_NAME(SERVICE_CONTROL_INTERROGATE),
     VALUE_NAME(SERVICE_CONTROL_NETBINDADD),
@@ -216,7 +217,8 @@ std::map<DWORD, std::string> const control_names{
     //VALUE_NAME(SERVICE_CONTROL_USERMODEREBOOT),
 };
 
-std::map<DWORD, std::string> const session_change_codes{
+std::map<DWORD, std::string> const session_change_codes
+{
     VALUE_NAME(WTS_CONSOLE_CONNECT),
     VALUE_NAME(WTS_CONSOLE_DISCONNECT),
     VALUE_NAME(WTS_REMOTE_CONNECT),
@@ -229,6 +231,24 @@ std::map<DWORD, std::string> const session_change_codes{
     VALUE_NAME(WTS_SESSION_REMOTE_CONTROL),
     VALUE_NAME(WTS_SESSION_TERMINATE),
 };
+
+std::map<DWORD, std::string> const wait_results
+{
+    VALUE_NAME(WAIT_OBJECT_0),
+    VALUE_NAME(WAIT_OBJECT_0 + 1),
+    VALUE_NAME(WAIT_OBJECT_0 + 2),
+    VALUE_NAME(WAIT_TIMEOUT),
+    VALUE_NAME(WAIT_FAILED),
+};
+
+template <typename Map, typename T>
+typename Map::mapped_type get_with_default(Map const& map, typename Map::key_type const& key, T const& default_value)
+{
+    auto it = map.find(key);
+    if (it != map.end())
+        return it->second;
+    return default_value;
+}
 
 BOOL Convert(PSID sid, char*& str)
 {
@@ -264,9 +284,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
     auto const context = static_cast<SettingsWatchdogContext*>(lpContext);
 
     BOOST_LOG_TRIVIAL(trace) << "Service control " << dwControl << " ("
-        << (control_names.find(dwControl) == control_names.end()
-            ? "unknown"
-            : control_names.at(dwControl))
+        << get_with_default(control_names, dwControl, "unknown")
         << ")";
     switch (dwControl) {
         case SERVICE_CONTROL_INTERROGATE:
@@ -287,7 +305,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         }
         case SERVICE_CONTROL_SESSIONCHANGE:
         {
-            BOOST_LOG_TRIVIAL(trace) << "session-change code " << dwEventType;
+            BOOST_LOG_TRIVIAL(trace) << "session-change code " << get_with_default(session_change_codes, dwEventType, std::to_string(dwEventType));
             auto const notification = static_cast<WTSSESSION_NOTIFICATION*>(lpEventData);
             if (notification->cbSize != sizeof WTSSESSION_NOTIFICATION) {
                 // The OS is sending the wrong structure size, so let's pretend
@@ -465,7 +483,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 boost::numeric_cast<DWORD>(wait_handles.size()),
                 wait_handles.data(), false, INFINITE);
             std::error_code ec(GetLastError(), std::system_category());
-            BOOST_LOG_TRIVIAL(trace) << "Wait returned " << WaitResult;
+            BOOST_LOG_TRIVIAL(trace) << "Wait returned " << get_with_default(wait_results, WaitResult, std::to_string(WaitResult));
             switch (WaitResult) {
                 case WAIT_OBJECT_0:
                 {
