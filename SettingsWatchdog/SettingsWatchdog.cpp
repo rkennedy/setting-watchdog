@@ -7,7 +7,7 @@ namespace bl = boost::log;
 #define VALUE_NAME(x) { x, #x }
 
 auto const SystemPolicyKey = TEXT("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System");
-auto const DesktopPolicyKey = TEXT("SOFTWARE\\Policies\\Microsoft\\Windows\\Control Panel\\Desktop");
+auto const DesktopPolicyKey = TEXT("Control Panel\\Desktop");
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
 template <typename T>
@@ -336,9 +336,9 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                         [&context, &notification](SID_AND_ATTRIBUTES const& saa) {
                             SidFormatter const sid(saa.Sid);
                             try {
-                                boost::basic_format<TCHAR> subkey(TEXT("%1%\\Software\\Policies\\Microsoft\\Windows\\Control Panel\\Desktop"));
+                                boost::basic_format<TCHAR> subkey(TEXT("%1%\\%2%"));
                                 BOOST_LOG_TRIVIAL(trace) << "session sid " << sid;
-                                context->sessions.emplace(notification->dwSessionId, std::move(RegKey(HKEY_USERS, (subkey % sid).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE)));
+                                context->sessions.emplace(notification->dwSessionId, std::move(RegKey(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE)));
                             } catch (std::system_error const&) {
                                 BOOST_LOG_TRIVIAL(warning) << "no registry key for sid " << sid;
                                 return false;
@@ -427,6 +427,21 @@ bool PrepareNextIteration()
     return true;
 }
 
+template <typename T>
+bool check_range(T const& min, T const& max, T const& value)
+{
+    return min <= value && value < max;
+}
+
+template <typename T>
+bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
+{
+    if (check_range(min, max, value))
+        return true;
+    BOOST_LOG_TRIVIAL(warning) << boost::format("%1% %2% not in range [%3%,%4%)") % label % value % min % max;
+    return false;
+}
+
 void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
     BOOST_LOG_FUNC();
@@ -439,6 +454,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             Event(),
             Event(),
             0
+            // TODO initialize context.sessions with current session list
         };
 
         DWORD starting_checkpoint = 0;
@@ -451,7 +467,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         // registry-change notification will signal the event, so the event
         // needs to still exist when we close the registry key.
         BOOST_LOG_TRIVIAL(trace) << "Creating notification event";
-        Event NotifyEvent;
+        Event system_notify_event;
         BOOST_LOG_TRIVIAL(trace) << "Created notification event";
 
         BOOST_LOG_TRIVIAL(trace) << "Opening target registry key";
@@ -464,7 +480,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         start_pending.dwCheckPoint = starting_checkpoint++;
         SetServiceStatus(context.StatusHandle, &start_pending);
 
-        EstablishNotification(system_key, NotifyEvent);
+        EstablishNotification(system_key, system_notify_event);
 
         SERVICE_STATUS started = { ServiceType, SERVICE_RUNNING,
             SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE, NO_ERROR, 0, 0,
@@ -477,7 +493,15 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         BOOST_LOG_TRIVIAL(trace) << "Beginning service loop";
         bool stop_requested = false;
         do {
-            std::vector<HANDLE> const wait_handles{ NotifyEvent, context.StopEvent, context.SessionChange };
+            std::vector<HANDLE> wait_handles{ system_notify_event, context.StopEvent, context.SessionChange };
+            auto const FixedWaitObjectCount = wait_handles.size();
+            for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
+                wait_handles.push_back(it->second.notification);
+            }
+            if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
+                wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
+            }
+
             BOOST_LOG_TRIVIAL(trace) << "Waiting for next event";
             DWORD const WaitResult = WaitForMultipleObjects(
                 boost::numeric_cast<DWORD>(wait_handles.size()),
@@ -487,10 +511,10 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             switch (WaitResult) {
                 case WAIT_OBJECT_0:
                 {
-                    BOOST_LOG_TRIVIAL(trace) << "Registry changed";
+                    BOOST_LOG_TRIVIAL(trace) << "System registry changed";
                     RemoveLoginMessage(system_key);
                     RemoveAutosignonRestriction(system_key);
-                    EstablishNotification(system_key, NotifyEvent);
+                    EstablishNotification(system_key, system_notify_event);
                     break;
                 }
                 case WAIT_OBJECT_0 + 1:
@@ -507,16 +531,34 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 {
                     BOOST_LOG_TRIVIAL(trace) << "Session list changed";
                     for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
-                        if (!it->second.running) {
+                        auto& session = it->second;
+                        if (!session.running) {
                             // Remove no-longer-running session
                             it = context.sessions.erase(it);
                             continue;
                         }
-                        if (it->second.new_) {
+                        if (session.new_) {
                             // TODO Initialize new sessions
-                            it->second.new_ = false;
-                            EstablishNotification(it->second.key, it->second.notification);
+                            session.new_ = false;
+                            EstablishNotification(session.key, session.notification);
                         }
+                    }
+                    break;
+                }
+                default:
+                {
+                    if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
+                        auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
+                        if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
+                            break;
+                        }
+                        auto const session_it = std::next(context.sessions.begin(), session_index);
+                        auto const& session = session_it->second;
+                        BOOST_LOG_TRIVIAL(trace) << "Session registry changed"; // TODO include session label in message
+                        RemoveScreenSaverPolicy(session.key);
+                        EstablishNotification(session.key, session.notification);
+                    } else {
+                        BOOST_LOG_TRIVIAL(trace) << "Unexpected wait result";
                     }
                     break;
                 }
@@ -529,11 +571,6 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 {
                     BOOST_LOG_TRIVIAL(error) << "Waiting for notification failed";
                     throw std::system_error(ec, "Error waiting for events");
-                }
-                default:
-                {
-                    BOOST_LOG_TRIVIAL(trace) << "Unexpected wait result";
-                    break;
                 }
             }
         } while (!stop_requested && PrepareNextIteration());
