@@ -547,24 +547,30 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
     }
 }
 
+BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", DWORD)
+BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", DWORD)
+
 void SetUpLogging()
 {
     BOOST_LOG_FUNC();
-    bl::add_common_attributes();
-    bl::core::get()->add_global_attribute(
-        "Scope", bl::attributes::named_scope());
-    bl::formatter formatter =
-        (bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
-         % bl::expressions::format_date_time<boost::posix_time::ptime>("TimeStamp", "%Y-%m-%d %H:%M:%S")
-         % bl::expressions::attr<bl::attributes::current_process_id::value_type>("ProcessID")
-         % bl::expressions::attr<bl::attributes::current_thread_id::value_type>("ThreadID")
-         % bl::trivial::severity
-         % bl::expressions::format_named_scope(
-             "Scope",
-             bl::keywords::format = "%n",
-             bl::keywords::incomplete_marker = "",
-             bl::keywords::depth = 1)
-         % bl::expressions::smessage);
+    bl::core::get()->add_global_attribute("TimeStamp", bl::attributes::local_clock());
+    bl::core::get()->add_global_attribute("ProcessId", bl::attributes::make_constant(GetCurrentProcessId()));
+    bl::core::get()->add_global_attribute("ThreadId", bl::attributes::make_function(&GetCurrentThreadId));
+    bl::core::get()->add_global_attribute("Scope", bl::attributes::named_scope());
+    bl::formatter formatter = (
+        bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
+        % bl::expressions::format_date_time<boost::posix_time::ptime>(
+            "TimeStamp", "%Y-%m-%d %H:%M:%S")
+        % process_id
+        % thread_id
+        % bl::trivial::severity
+        % bl::expressions::format_named_scope(
+            "Scope",
+            bl::keywords::format = "%n",
+            bl::keywords::incomplete_marker = "",
+            bl::keywords::depth = 1)
+        % bl::expressions::smessage
+    );
     bl::add_console_log()->set_formatter(formatter);
     bl::add_file_log(
         bl::keywords::file_name = "C:\\SettingsWatchdog.log",
