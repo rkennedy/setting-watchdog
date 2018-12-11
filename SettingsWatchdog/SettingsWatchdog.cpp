@@ -98,11 +98,31 @@ public:
             CloseHandle(m_handle);
     }
     HANDLE* operator&() {
+        BOOST_LOG_FUNC();
         return &m_handle;
     }
     operator HANDLE() const {
         BOOST_LOG_FUNC();
         return m_handle;
+    }
+};
+
+class AutoFreeWTSString: private boost::noncopyable
+{
+private:
+    LPTSTR m_value = NULL;
+public:
+    ~AutoFreeWTSString() {
+        BOOST_LOG_FUNC();
+        WTSFreeMemory(m_value);
+    }
+    LPTSTR* operator&() {
+        BOOST_LOG_FUNC();
+        return &m_value;
+    }
+    operator LPTSTR() const {
+        BOOST_LOG_FUNC();
+        return m_value;
     }
 };
 
@@ -181,11 +201,13 @@ struct SessionData: private boost::noncopyable
     bool running;
     Event notification;
     RegKey const key;
-    SessionData(RegKey&& key):
+    std::basic_string<TCHAR> const username;
+    SessionData(RegKey&& key, std::basic_string<TCHAR> const& username):
         new_(true),
         running(true),
         notification(),
-        key(std::move(key))
+        key(std::move(key)),
+        username(username)
     {}
 };
 
@@ -281,6 +303,47 @@ public:
     }
 };
 
+void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
+{
+    BOOST_LOG_FUNC();
+    {
+        std::lock_guard<std::mutex> session_guard(context->session_mutex);
+        assert(context->sessions.find(dwSessionId) == context->sessions.end());
+    }
+    // Get session user name
+    AutoFreeWTSString name_buffer;
+    DWORD name_buffer_bytes;
+    WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
+
+    // Get SID of session
+    AutoCloseHandle session_token;
+    WinCheck(WTSQueryUserToken(dwSessionId, &session_token), "getting session token");
+
+    DWORD returned_length;
+    GetTokenInformation(session_token, TokenUser, nullptr, 0, &returned_length);
+
+    std::vector<unsigned char> group_buffer(returned_length);
+    WinCheck(GetTokenInformation(session_token, TokenUser, group_buffer.data(), boost::numeric_cast<DWORD>(group_buffer.size()), &returned_length), "getting token information");
+    auto const token_user = reinterpret_cast<TOKEN_USER*>(group_buffer.data());
+
+    SidFormatter const sid(token_user->User.Sid);
+    try {
+        boost::basic_format<TCHAR> subkey(TEXT("%1%\\%2%"));
+        BOOST_LOG_TRIVIAL(trace) << "session sid " << sid << " (" << name_buffer << ")";
+        RegKey key(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE);
+
+        std::lock_guard<std::mutex> session_guard(context->session_mutex);
+        context->sessions.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(dwSessionId),
+            std::forward_as_tuple(std::move(key), static_cast<LPTSTR>(name_buffer))
+            );
+        SetEvent(context->SessionChange);
+    } catch (std::system_error const&) {
+        BOOST_LOG_TRIVIAL(warning) << "no registry key for sid " << sid;
+    }
+}
+
 DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                             LPVOID lpEventData, LPVOID lpContext)
 {
@@ -323,29 +386,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
             switch (dwEventType) {
                 case WTS_SESSION_LOGON:
                 {
-                    std::lock_guard<std::mutex> session_guard(context->session_mutex);
-
-                    assert(context->sessions.find(notification->dwSessionId) == context->sessions.end());
-                    // Get SID of session
-                    AutoCloseHandle session_token;
-                    WinCheck(WTSQueryUserToken(notification->dwSessionId, &session_token), "getting session token");
-
-                    DWORD returned_length;
-                    GetTokenInformation(session_token, TokenUser, nullptr, 0, &returned_length);
-
-                    std::vector<unsigned char> group_buffer(returned_length);
-                    WinCheck(GetTokenInformation(session_token, TokenUser, group_buffer.data(), boost::numeric_cast<DWORD>(group_buffer.size()), &returned_length), "getting token information");
-                    auto const token_user = reinterpret_cast<TOKEN_USER*>(group_buffer.data());
-
-                    SidFormatter const sid(token_user->User.Sid);
-                    try {
-                        boost::basic_format<TCHAR> subkey(TEXT("%1%\\%2%"));
-                        BOOST_LOG_TRIVIAL(trace) << "session sid " << sid;
-                        context->sessions.emplace(notification->dwSessionId, std::move(RegKey(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE)));
-                        SetEvent(context->SessionChange);
-                    } catch (std::system_error const&) {
-                        BOOST_LOG_TRIVIAL(warning) << "no registry key for sid " << sid;
-                    }
+                    add_session(notification->dwSessionId, context);
                     break;
                 }
                 case WTS_SESSION_LOGOFF:
@@ -476,6 +517,15 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         start_pending.dwCheckPoint = starting_checkpoint++;
         SetServiceStatus(context.StatusHandle, &start_pending);
 
+        WTS_SESSION_INFO* raw_session_info;
+        DWORD session_count;
+        WinCheck(WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &raw_session_info, &session_count), "getting session list");
+        std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
+        for (auto i = 0u; i < session_count; ++i) {
+            WTS_SESSION_INFO const* info = session_info.get();
+            add_session(info->SessionId, &context);
+        }
+
         start_pending.dwCheckPoint = starting_checkpoint++;
         SetServiceStatus(context.StatusHandle, &start_pending);
 
@@ -559,7 +609,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         }
                         auto const session_it = std::next(context.sessions.begin(), session_index);
                         auto const& session = session_it->second;
-                        BOOST_LOG_TRIVIAL(trace) << "Session registry changed"; // TODO include session label in message
+                        BOOST_LOG_TRIVIAL(trace) << "Session registry changed for " << session.username;
                         RemoveScreenSaverPolicy(session.key);
                         EstablishNotification(session.key, session.notification);
                     } else {
@@ -665,3 +715,5 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 }
+
+// vim: set et sw=4 ts=4:
