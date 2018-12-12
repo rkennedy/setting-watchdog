@@ -629,14 +629,16 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 }
             }
         } while (!stop_requested && PrepareNextIteration());
-
-        SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR,
-            0, 0, 0 };
-        SetServiceStatus(context.StatusHandle, &stopped);
     } catch (std::system_error const& ex) {
         BOOST_LOG_TRIVIAL(error) << "Error (" << ex.code() << ") " << ex.what();
+        SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, ex.code(),
+            0, 0, 0 };
+        SetServiceStatus(context.StatusHandle, &stopped);
         return;
     }
+    SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR,
+        0, 0, 0 };
+    SetServiceStatus(context.StatusHandle, &stopped);
 }
 
 BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", DWORD)
