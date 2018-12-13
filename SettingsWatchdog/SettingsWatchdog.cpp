@@ -636,13 +636,19 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 0, 0, 0 };
             SetServiceStatus(context.StatusHandle, &stopped);
         } catch (std::system_error const& ex) {
-            SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, ex.code(),
-                0, 0, 0 };
-            SetServiceStatus(context.StatusHandle, &stopped);
+            if (ex.code().category() == std::system_category()) {
+                SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0,
+                    boost::numeric_cast<DWORD>(ex.code().value()), 0, 0, 0 };
+                SetServiceStatus(context.StatusHandle, &stopped);
+            } else {
+                SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0,
+                    ERROR_SERVICE_SPECIFIC_ERROR, boost::numeric_cast<DWORD>(ex.code().value()), 0, 0 };
+                SetServiceStatus(context.StatusHandle, &stopped);
+            }
             throw;
         }
     } catch (std::system_error const& ex) {
-        BOOST_LOG_TRIVIAL(error) << "Error (" << ex.code() << ") " << ex.what();
+        BOOST_LOG_TRIVIAL(error) << "Error (" << ex.code() << ") " << boost::algorithm::trim_copy(std::string(ex.what()));
         return;
     }
 }
