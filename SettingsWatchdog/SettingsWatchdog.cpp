@@ -315,7 +315,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
     AutoFreeWTSString name_buffer;
     DWORD name_buffer_bytes;
     WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
-    BOOST_LOG_TRIVIAL(trace) << "user for session is " << name_buffer;
+    BOOST_LOG_TRIVIAL(trace) << "user for session is " << static_cast<LPTSTR>(name_buffer);
 
     // Get SID of session
     AutoCloseHandle session_token;
@@ -331,7 +331,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
     SidFormatter const sid(token_user->User.Sid);
     try {
         boost::basic_format<TCHAR> subkey(TEXT("%1%\\%2%"));
-        BOOST_LOG_TRIVIAL(trace) << "session sid " << sid << " (" << name_buffer << ")";
+        BOOST_LOG_TRIVIAL(trace) << "session sid " << sid << " (" << static_cast<LPTSTR>(name_buffer) << ")";
         RegKey key(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE);
 
         std::lock_guard<std::mutex> session_guard(context->session_mutex);
@@ -521,11 +521,11 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
             WTS_SESSION_INFO* raw_session_info;
             DWORD session_count;
+            BOOST_LOG_TRIVIAL(trace) << "enumerating sessions";
             WinCheck(WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &raw_session_info, &session_count), "getting session list");
             std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
             for (auto i = 0u; i < session_count; ++i) {
                 WTS_SESSION_INFO const* info = session_info.get() + i;
-                BOOST_LOG_TRIVIAL(trace) << "session " << i << ": " << info->SessionId;
                 add_session(info->SessionId, &context);
             }
 
