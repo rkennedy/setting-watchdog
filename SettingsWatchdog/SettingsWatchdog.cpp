@@ -306,6 +306,7 @@ public:
 void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
 {
     BOOST_LOG_FUNC();
+    BOOST_LOG_TRIVIAL(trace) << "adding session ID " << dwSessionId;
     {
         std::lock_guard<std::mutex> session_guard(context->session_mutex);
         assert(context->sessions.find(dwSessionId) == context->sessions.end());
@@ -314,6 +315,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
     AutoFreeWTSString name_buffer;
     DWORD name_buffer_bytes;
     WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
+    BOOST_LOG_TRIVIAL(trace) << "user for session is " << name_buffer;
 
     // Get SID of session
     AutoCloseHandle session_token;
@@ -496,149 +498,153 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             0
             // TODO initialize context.sessions with current session list
         };
+        try {
+            DWORD starting_checkpoint = 0;
+            SERVICE_STATUS start_pending = { ServiceType, SERVICE_START_PENDING, 0,
+                NO_ERROR, 0, starting_checkpoint++, 500 };
+            SetServiceStatus(context.StatusHandle, &start_pending);
 
-        DWORD starting_checkpoint = 0;
-        SERVICE_STATUS start_pending = { ServiceType, SERVICE_START_PENDING, 0,
-            NO_ERROR, 0, starting_checkpoint++, 500 };
-        SetServiceStatus(context.StatusHandle, &start_pending);
+            // Event handle must be created first because it must outlive its
+            // associated registry key. When we close the registry key, the
+            // registry-change notification will signal the event, so the event
+            // needs to still exist when we close the registry key.
+            BOOST_LOG_TRIVIAL(trace) << "Creating notification event";
+            Event system_notify_event;
+            BOOST_LOG_TRIVIAL(trace) << "Created notification event";
 
-        // Event handle must be created first because it must outlive its
-        // associated registry key. When we close the registry key, the
-        // registry-change notification will signal the event, so the event
-        // needs to still exist when we close the registry key.
-        BOOST_LOG_TRIVIAL(trace) << "Creating notification event";
-        Event system_notify_event;
-        BOOST_LOG_TRIVIAL(trace) << "Created notification event";
+            BOOST_LOG_TRIVIAL(trace) << "Opening target registry key";
+            RegKey const system_key(HKEY_LOCAL_MACHINE, SystemPolicyKey, KEY_NOTIFY | KEY_SET_VALUE);
+            BOOST_LOG_TRIVIAL(trace) << "Opened target registry key";
 
-        BOOST_LOG_TRIVIAL(trace) << "Opening target registry key";
-        RegKey const system_key(HKEY_LOCAL_MACHINE, SystemPolicyKey, KEY_NOTIFY | KEY_SET_VALUE);
-        BOOST_LOG_TRIVIAL(trace) << "Opened target registry key";
+            start_pending.dwCheckPoint = starting_checkpoint++;
+            SetServiceStatus(context.StatusHandle, &start_pending);
 
-        start_pending.dwCheckPoint = starting_checkpoint++;
-        SetServiceStatus(context.StatusHandle, &start_pending);
-
-        WTS_SESSION_INFO* raw_session_info;
-        DWORD session_count;
-        WinCheck(WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &raw_session_info, &session_count), "getting session list");
-        std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
-        for (auto i = 0u; i < session_count; ++i) {
-            WTS_SESSION_INFO const* info = session_info.get();
-            add_session(info->SessionId, &context);
-        }
-
-        start_pending.dwCheckPoint = starting_checkpoint++;
-        SetServiceStatus(context.StatusHandle, &start_pending);
-
-        EstablishNotification(system_key, system_notify_event);
-
-        SERVICE_STATUS started = { ServiceType, SERVICE_RUNNING,
-            SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE, NO_ERROR, 0, 0,
-            0 };
-        SetServiceStatus(context.StatusHandle, &started);
-
-        RemoveLoginMessage(system_key);
-        RemoveAutosignonRestriction(system_key);
-
-        BOOST_LOG_TRIVIAL(trace) << "Beginning service loop";
-        bool stop_requested = false;
-        do {
-            std::vector<HANDLE> wait_handles{ system_notify_event, context.StopEvent, context.SessionChange };
-            auto const FixedWaitObjectCount = wait_handles.size();
-            {
-                std::lock_guard<std::mutex> session_guard(context.session_mutex);
-                for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
-                    wait_handles.push_back(it->second.notification);
-                }
-            }
-            if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
-                wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
+            WTS_SESSION_INFO* raw_session_info;
+            DWORD session_count;
+            WinCheck(WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &raw_session_info, &session_count), "getting session list");
+            std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
+            for (auto i = 0u; i < session_count; ++i) {
+                WTS_SESSION_INFO const* info = session_info.get() + i;
+                BOOST_LOG_TRIVIAL(trace) << "session " << i << ": " << info->SessionId;
+                add_session(info->SessionId, &context);
             }
 
-            BOOST_LOG_TRIVIAL(trace) << "Waiting for next event";
-            DWORD const WaitResult = WaitForMultipleObjects(
-                boost::numeric_cast<DWORD>(wait_handles.size()),
-                wait_handles.data(), false, INFINITE);
-            std::error_code ec(GetLastError(), std::system_category());
-            BOOST_LOG_TRIVIAL(trace) << "Wait returned " << get_with_default(wait_results, WaitResult, std::to_string(WaitResult));
-            switch (WaitResult) {
-                case WAIT_OBJECT_0:
+            start_pending.dwCheckPoint = starting_checkpoint++;
+            SetServiceStatus(context.StatusHandle, &start_pending);
+
+            EstablishNotification(system_key, system_notify_event);
+
+            SERVICE_STATUS started = { ServiceType, SERVICE_RUNNING,
+                SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE, NO_ERROR, 0, 0,
+                0 };
+            SetServiceStatus(context.StatusHandle, &started);
+
+            RemoveLoginMessage(system_key);
+            RemoveAutosignonRestriction(system_key);
+
+            BOOST_LOG_TRIVIAL(trace) << "Beginning service loop";
+            bool stop_requested = false;
+            do {
+                std::vector<HANDLE> wait_handles{ system_notify_event, context.StopEvent, context.SessionChange };
+                auto const FixedWaitObjectCount = wait_handles.size();
                 {
-                    BOOST_LOG_TRIVIAL(trace) << "System registry changed";
-                    RemoveLoginMessage(system_key);
-                    RemoveAutosignonRestriction(system_key);
-                    EstablishNotification(system_key, system_notify_event);
-                    break;
-                }
-                case WAIT_OBJECT_0 + 1:
-                {
-                    BOOST_LOG_TRIVIAL(trace) << "Stop requested";
-                    SERVICE_STATUS stop_pending = { ServiceType,
-                        SERVICE_STOP_PENDING, 0, NO_ERROR, 0,
-                        context.stopping_checkpoint++, 500 };
-                    SetServiceStatus(context.StatusHandle, &stop_pending);
-                    stop_requested = true;
-                    break;
-                }
-                case WAIT_OBJECT_0 + 2:
-                {
-                    BOOST_LOG_TRIVIAL(trace) << "Session list changed";
-                    WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                     std::lock_guard<std::mutex> session_guard(context.session_mutex);
-                    for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
-                        auto& session = it->second;
-                        if (!session.running) {
-                            // Remove no-longer-running session
-                            it = context.sessions.erase(it);
-                            continue;
-                        }
-                        if (session.new_) {
-                            // TODO Initialize new sessions
-                            session.new_ = false;
-                            EstablishNotification(session.key, session.notification);
-                        }
+                    for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
+                        wait_handles.push_back(it->second.notification);
                     }
-                    break;
                 }
-                default:
-                {
-                    if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
-                        auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
+                if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
+                    wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
+                }
+
+                BOOST_LOG_TRIVIAL(trace) << "Waiting for next event";
+                DWORD const WaitResult = WaitForMultipleObjects(
+                    boost::numeric_cast<DWORD>(wait_handles.size()),
+                    wait_handles.data(), false, INFINITE);
+                std::error_code ec(GetLastError(), std::system_category());
+                BOOST_LOG_TRIVIAL(trace) << "Wait returned " << get_with_default(wait_results, WaitResult, std::to_string(WaitResult));
+                switch (WaitResult) {
+                    case WAIT_OBJECT_0:
+                    {
+                        BOOST_LOG_TRIVIAL(trace) << "System registry changed";
+                        RemoveLoginMessage(system_key);
+                        RemoveAutosignonRestriction(system_key);
+                        EstablishNotification(system_key, system_notify_event);
+                        break;
+                    }
+                    case WAIT_OBJECT_0 + 1:
+                    {
+                        BOOST_LOG_TRIVIAL(trace) << "Stop requested";
+                        SERVICE_STATUS stop_pending = { ServiceType,
+                            SERVICE_STOP_PENDING, 0, NO_ERROR, 0,
+                            context.stopping_checkpoint++, 500 };
+                        SetServiceStatus(context.StatusHandle, &stop_pending);
+                        stop_requested = true;
+                        break;
+                    }
+                    case WAIT_OBJECT_0 + 2:
+                    {
+                        BOOST_LOG_TRIVIAL(trace) << "Session list changed";
+                        WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         std::lock_guard<std::mutex> session_guard(context.session_mutex);
-                        if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
-                            break;
+                        for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
+                            auto& session = it->second;
+                            if (!session.running) {
+                                // Remove no-longer-running session
+                                it = context.sessions.erase(it);
+                                continue;
+                            }
+                            if (session.new_) {
+                                // TODO Initialize new sessions
+                                session.new_ = false;
+                                EstablishNotification(session.key, session.notification);
+                            }
                         }
-                        auto const session_it = std::next(context.sessions.begin(), session_index);
-                        auto const& session = session_it->second;
-                        BOOST_LOG_TRIVIAL(trace) << "Session registry changed for " << session.username;
-                        RemoveScreenSaverPolicy(session.key);
-                        EstablishNotification(session.key, session.notification);
-                    } else {
-                        BOOST_LOG_TRIVIAL(trace) << "Unexpected wait result";
+                        break;
                     }
-                    break;
+                    default:
+                    {
+                        if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
+                            auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
+                            std::lock_guard<std::mutex> session_guard(context.session_mutex);
+                            if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
+                                break;
+                            }
+                            auto const session_it = std::next(context.sessions.begin(), session_index);
+                            auto const& session = session_it->second;
+                            BOOST_LOG_TRIVIAL(trace) << "Session registry changed for " << session.username;
+                            RemoveScreenSaverPolicy(session.key);
+                            EstablishNotification(session.key, session.notification);
+                        } else {
+                            BOOST_LOG_TRIVIAL(trace) << "Unexpected wait result";
+                        }
+                        break;
+                    }
+                    case WAIT_TIMEOUT:
+                    {
+                        BOOST_LOG_TRIVIAL(warning) << "Infinity elapsed";
+                        break;
+                    }
+                    case WAIT_FAILED:
+                    {
+                        BOOST_LOG_TRIVIAL(error) << "Waiting for notification failed";
+                        throw std::system_error(ec, "Error waiting for events");
+                    }
                 }
-                case WAIT_TIMEOUT:
-                {
-                    BOOST_LOG_TRIVIAL(warning) << "Infinity elapsed";
-                    break;
-                }
-                case WAIT_FAILED:
-                {
-                    BOOST_LOG_TRIVIAL(error) << "Waiting for notification failed";
-                    throw std::system_error(ec, "Error waiting for events");
-                }
-            }
-        } while (!stop_requested && PrepareNextIteration());
+            } while (!stop_requested && PrepareNextIteration());
+            SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR,
+                0, 0, 0 };
+            SetServiceStatus(context.StatusHandle, &stopped);
+        } catch (std::system_error const& ex) {
+            SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, ex.code(),
+                0, 0, 0 };
+            SetServiceStatus(context.StatusHandle, &stopped);
+            throw;
+        }
     } catch (std::system_error const& ex) {
         BOOST_LOG_TRIVIAL(error) << "Error (" << ex.code() << ") " << ex.what();
-        SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, ex.code(),
-            0, 0, 0 };
-        SetServiceStatus(context.StatusHandle, &stopped);
         return;
     }
-    SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR,
-        0, 0, 0 };
-    SetServiceStatus(context.StatusHandle, &stopped);
 }
 
 BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", DWORD)
