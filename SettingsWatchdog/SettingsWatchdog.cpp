@@ -623,6 +623,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         BOOST_LOG_TRIVIAL(trace) << "Session list changed";
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
+                        // TODO replace this with algorithm(s) to avoid incrementing `it`
                         for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
                             auto& session = it->second;
                             if (!session.running) {
