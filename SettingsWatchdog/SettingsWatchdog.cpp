@@ -303,12 +303,25 @@ public:
     }
 };
 
+struct logging_lock_guard
+{
+    std::string label;
+    std::lock_guard<std::mutex> guard;
+    logging_lock_guard(std::mutex& m, std::string label):
+        label(([](std::string const& l) { BOOST_LOG_TRIVIAL(trace) << "locking " << l; return l; })(label)),
+        guard(m)
+    { }
+    ~logging_lock_guard() {
+        BOOST_LOG_TRIVIAL(trace) << "unlocked " << label;
+    }
+};
+
 void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
 {
     BOOST_LOG_FUNC();
     BOOST_LOG_TRIVIAL(trace) << "adding session ID " << dwSessionId;
     {
-        std::lock_guard<std::mutex> session_guard(context->session_mutex);
+        logging_lock_guard session_guard(context->session_mutex, "assertion");
         assert(context->sessions.find(dwSessionId) == context->sessions.end());
     }
     // Get session user name
@@ -343,7 +356,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
         BOOST_LOG_TRIVIAL(trace) << "session sid " << sid << " (" << static_cast<LPTSTR>(name_buffer) << ")";
         RegKey key(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE);
 
-        std::lock_guard<std::mutex> session_guard(context->session_mutex);
+        logging_lock_guard session_guard(context->session_mutex, "emplacement");
         context->sessions.emplace(
             std::piecewise_construct,
             std::forward_as_tuple(dwSessionId),
@@ -402,7 +415,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                 }
                 case WTS_SESSION_LOGOFF:
                 {
-                    std::lock_guard<std::mutex> session_guard(context->session_mutex);
+                    logging_lock_guard session_guard(context->session_mutex, "logoff");
                     auto const it = context->sessions.find(notification->dwSessionId);
                     if (it == context->sessions.end()) {
                         BOOST_LOG_TRIVIAL(info) << "Session is not known. Ignored.";
@@ -571,7 +584,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 std::vector<HANDLE> wait_handles{ system_notify_event, context.StopEvent, context.SessionChange };
                 auto const FixedWaitObjectCount = wait_handles.size();
                 {
-                    std::lock_guard<std::mutex> session_guard(context.session_mutex);
+                    logging_lock_guard session_guard(context.session_mutex, "pre-wait");
                     for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
                         wait_handles.push_back(it->second.notification);
                     }
@@ -609,7 +622,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     {
                         BOOST_LOG_TRIVIAL(trace) << "Session list changed";
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
-                        std::lock_guard<std::mutex> session_guard(context.session_mutex);
+                        logging_lock_guard session_guard(context.session_mutex, "session-list change");
                         for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
                             auto& session = it->second;
                             if (!session.running) {
@@ -629,7 +642,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     {
                         if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
                             auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
-                            std::lock_guard<std::mutex> session_guard(context.session_mutex);
+                            logging_lock_guard session_guard(context.session_mutex, "session key change");
                             if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
                                 break;
                             }
