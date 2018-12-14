@@ -528,15 +528,26 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             start_pending.dwCheckPoint = starting_checkpoint++;
             SetServiceStatus(context.StatusHandle, &start_pending);
 
-            WTS_SESSION_INFO* raw_session_info;
+            WTS_SESSION_INFO_1* raw_session_info;
             DWORD session_count;
             BOOST_LOG_TRIVIAL(trace) << "enumerating sessions";
-            WinCheck(WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &raw_session_info, &session_count), "getting session list");
-            std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
-            std::for_each(session_info.get(), session_info.get() + session_count, [&context](WTS_SESSION_INFO const& info) {
-                BOOST_LOG_TRIVIAL(trace) << "session window station " << info.pWinStationName;
-                add_session(info.SessionId, &context);
-            });
+            DWORD level = 1;
+            WinCheck(WTSEnumerateSessionsEx(WTS_CURRENT_SERVER_HANDLE, &level, 0, &raw_session_info, &session_count), "getting session list");
+            std::shared_ptr<WTS_SESSION_INFO_1> session_info(
+                raw_session_info,
+                [&session_count](void* info) {
+                    WTSFreeMemoryEx(WTSTypeSessionInfoLevel1, info, session_count);
+                });
+            std::for_each(
+                session_info.get(), session_info.get() + session_count,
+                [&context](WTS_SESSION_INFO_1 const& info) {
+                    BOOST_LOG_TRIVIAL(trace) << "session " << info.pSessionName;
+                    if (!info.pUserName) {
+                        BOOST_LOG_TRIVIAL(trace) << "null user name; skipped";
+                        return;
+                    }
+                    add_session(info.SessionId, &context);
+                });
 
             start_pending.dwCheckPoint = starting_checkpoint++;
             SetServiceStatus(context.StatusHandle, &start_pending);
