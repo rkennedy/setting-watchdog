@@ -533,11 +533,10 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             BOOST_LOG_TRIVIAL(trace) << "enumerating sessions";
             WinCheck(WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, &raw_session_info, &session_count), "getting session list");
             std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
-            for (auto i = 0u; i < session_count; ++i) {
-                WTS_SESSION_INFO const* info = session_info.get() + i;
-                BOOST_LOG_TRIVIAL(trace) << "session " << i << " window station " << info->pWinStationName;
-                add_session(info->SessionId, &context);
-            }
+            std::for_each(session_info.get(), session_info.get() + session_count, [&context](WTS_SESSION_INFO const& info) {
+                BOOST_LOG_TRIVIAL(trace) << "session window station " << info.pWinStationName;
+                add_session(info.SessionId, &context);
+            });
 
             start_pending.dwCheckPoint = starting_checkpoint++;
             SetServiceStatus(context.StatusHandle, &start_pending);
