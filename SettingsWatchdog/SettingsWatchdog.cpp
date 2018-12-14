@@ -561,6 +561,9 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
             RemoveLoginMessage(system_key);
             RemoveAutosignonRestriction(system_key);
+            for_each(context.sessions.begin(), context.sessions.end(), [](std::map<DWORD, SessionData>::value_type const& item) {
+                RemoveScreenSaverPolicy(item.second.key);
+            });
 
             BOOST_LOG_TRIVIAL(trace) << "Beginning service loop";
             bool stop_requested = false;
@@ -577,7 +580,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
                 }
 
-                BOOST_LOG_TRIVIAL(trace) << "Waiting for next event";
+                BOOST_LOG_TRIVIAL(info) << "Waiting for " << wait_handles.size() << " event(s)";
                 DWORD const WaitResult = WaitForMultipleObjects(
                     boost::numeric_cast<DWORD>(wait_handles.size()),
                     wait_handles.data(), false, INFINITE);
