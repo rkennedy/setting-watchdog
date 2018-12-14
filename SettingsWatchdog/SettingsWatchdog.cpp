@@ -372,7 +372,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         case SERVICE_CONTROL_STOP:
         {
             SERVICE_STATUS stop_pending = { ServiceType, SERVICE_STOP_PENDING,
-                0, NO_ERROR, 0, context->stopping_checkpoint++, 500 };
+                0, NO_ERROR, 0, context->stopping_checkpoint++, 10 };
             SetServiceStatus(context->StatusHandle, &stop_pending);
 
             SetEvent(context->StopEvent);
@@ -510,7 +510,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         try {
             DWORD starting_checkpoint = 0;
             SERVICE_STATUS start_pending = { ServiceType, SERVICE_START_PENDING, 0,
-                NO_ERROR, 0, starting_checkpoint++, 500 };
+                NO_ERROR, 0, starting_checkpoint++, 10 };
             SetServiceStatus(context.StatusHandle, &start_pending);
 
             // Event handle must be created first because it must outlive its
@@ -600,7 +600,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         BOOST_LOG_TRIVIAL(trace) << "Stop requested";
                         SERVICE_STATUS stop_pending = { ServiceType,
                             SERVICE_STOP_PENDING, 0, NO_ERROR, 0,
-                            context.stopping_checkpoint++, 500 };
+                            context.stopping_checkpoint++, 10 };
                         SetServiceStatus(context.StatusHandle, &stop_pending);
                         stop_requested = true;
                         break;
