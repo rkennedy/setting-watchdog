@@ -635,6 +635,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                                 session.new_ = false;
                                 EstablishNotification(session.key, session.notification);
                             }
+                            ++it;
                         }
                         break;
                     }
