@@ -317,9 +317,18 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
     WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
     BOOST_LOG_TRIVIAL(trace) << "user for session is " << static_cast<LPTSTR>(name_buffer);
 
-    // Get SID of session
     AutoCloseHandle session_token;
-    WinCheck(WTSQueryUserToken(dwSessionId, &session_token), "getting session token");
+    try {
+        // Get SID of session
+        WinCheck(WTSQueryUserToken(dwSessionId, &session_token), "getting session token");
+    } catch (std::system_error const& ex) {
+        std::error_code const error_no_token(ERROR_NO_TOKEN, std::system_category());
+        if (ex.code() == error_no_token) {
+            BOOST_LOG_TRIVIAL(info) << "no token for session";
+            return;
+        }
+        throw;
+    }
 
     DWORD returned_length;
     GetTokenInformation(session_token, TokenUser, nullptr, 0, &returned_length);
@@ -526,6 +535,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             std::shared_ptr<WTS_SESSION_INFO> session_info(raw_session_info, WTSFreeMemory);
             for (auto i = 0u; i < session_count; ++i) {
                 WTS_SESSION_INFO const* info = session_info.get() + i;
+                BOOST_LOG_TRIVIAL(trace) << "session " << i << " window station " << info->pWinStationName;
                 add_session(info->SessionId, &context);
             }
 
