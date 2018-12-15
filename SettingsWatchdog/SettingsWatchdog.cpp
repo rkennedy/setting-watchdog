@@ -5,6 +5,11 @@ namespace po = boost::program_options;
 namespace bl = boost::log;
 
 #define VALUE_NAME(x) { x, #x }
+#if UNICODE
+using format = boost::wformat;
+#else
+using format = boost::format;
+#endif
 
 auto const SystemPolicyKey = TEXT("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System");
 auto const DesktopPolicyKey = TEXT("Control Panel\\Desktop");
@@ -132,7 +137,7 @@ void InstallService()
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
     TCHAR self_path[MAX_PATH];
     WinCheck(GetModuleFileName(NULL, self_path, MAX_PATH), "fetching current file name");
-    BOOST_LOG_TRIVIAL(trace) << "Current file name is " << self_path;
+    BOOST_LOG_TRIVIAL(trace) << format(TEXT("Current file name is %1%")) % self_path;
     ServiceHandle const service(handle, TEXT("SettingsWatchdog"),
                                 TEXT("Settings Watchdog"), ServiceType,
                                 SERVICE_AUTO_START, self_path);
@@ -308,18 +313,18 @@ struct logging_lock_guard
     std::string label;
     std::lock_guard<std::mutex> guard;
     logging_lock_guard(std::mutex& m, std::string label):
-        label(([](std::string const& l) { BOOST_LOG_TRIVIAL(trace) << "locking " << l; return l; })(label)),
+        label(([](std::string const& l) { BOOST_LOG_TRIVIAL(trace) << format(TEXT("locking %1%")) % l; return l; })(label)),
         guard(m)
     { }
     ~logging_lock_guard() {
-        BOOST_LOG_TRIVIAL(trace) << "unlocked " << label;
+        BOOST_LOG_TRIVIAL(trace) << format(TEXT("unlocked %1%")) % label;
     }
 };
 
 void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
 {
     BOOST_LOG_FUNC();
-    BOOST_LOG_TRIVIAL(trace) << "adding session ID " << dwSessionId;
+    BOOST_LOG_TRIVIAL(trace) << format(TEXT("adding session ID %1%")) % dwSessionId;
     {
         logging_lock_guard session_guard(context->session_mutex, "assertion");
         assert(context->sessions.find(dwSessionId) == context->sessions.end());
@@ -328,7 +333,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
     AutoFreeWTSString name_buffer;
     DWORD name_buffer_bytes;
     WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
-    BOOST_LOG_TRIVIAL(trace) << "user for session is " << static_cast<LPTSTR>(name_buffer);
+    BOOST_LOG_TRIVIAL(trace) << format(TEXT("user for session is %1%")) % static_cast<LPTSTR>(name_buffer);
 
     AutoCloseHandle session_token;
     try {
@@ -353,7 +358,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
     SidFormatter const sid(token_user->User.Sid);
     try {
         boost::basic_format<TCHAR> subkey(TEXT("%1%\\%2%"));
-        BOOST_LOG_TRIVIAL(trace) << "session sid " << sid << " (" << static_cast<LPTSTR>(name_buffer) << ")";
+        BOOST_LOG_TRIVIAL(trace) << format(TEXT("session sid %1% (%2%)")) % sid % static_cast<LPTSTR>(name_buffer);
         RegKey key(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE);
 
         logging_lock_guard session_guard(context->session_mutex, "emplacement");
@@ -364,7 +369,7 @@ void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
             );
         SetEvent(context->SessionChange);
     } catch (std::system_error const&) {
-        BOOST_LOG_TRIVIAL(warning) << "no registry key for sid " << sid;
+        BOOST_LOG_TRIVIAL(warning) << format(TEXT("no registry key for sid %1%")) % sid;
     }
 }
 
@@ -374,9 +379,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
     BOOST_LOG_FUNC();
     auto const context = static_cast<SettingsWatchdogContext*>(lpContext);
 
-    BOOST_LOG_TRIVIAL(trace) << "Service control " << dwControl << " ("
-        << get_with_default(control_names, dwControl, "unknown")
-        << ")";
+    BOOST_LOG_TRIVIAL(trace) << format(TEXT("Service control %1% (%2%)")) % dwControl % get_with_default(control_names, dwControl, "unknown");
     switch (dwControl) {
         case SERVICE_CONTROL_INTERROGATE:
             return NO_ERROR;
@@ -396,17 +399,17 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         }
         case SERVICE_CONTROL_SESSIONCHANGE:
         {
-            BOOST_LOG_TRIVIAL(trace) << "session-change code " << get_with_default(session_change_codes, dwEventType, std::to_string(dwEventType));
+            BOOST_LOG_TRIVIAL(trace) << format(TEXT("session-change code %1%")) % get_with_default(session_change_codes, dwEventType, std::to_string(dwEventType));
             auto const notification = static_cast<WTSSESSION_NOTIFICATION*>(lpEventData);
             if (notification->cbSize != sizeof WTSSESSION_NOTIFICATION) {
                 // The OS is sending the wrong structure size, so let's pretend
                 // we don't know how to handle it.
-                BOOST_LOG_TRIVIAL(error) << "Expected struct size "
-                    << sizeof WTSSESSION_NOTIFICATION << " but got "
-                    << notification->cbSize << " instead";
+                BOOST_LOG_TRIVIAL(error) << format(TEXT("Expected struct size %1% but got %2% instead"))
+                    % sizeof WTSSESSION_NOTIFICATION
+                    % notification->cbSize;
                 return ERROR_CALL_NOT_IMPLEMENTED;
             }
-            BOOST_LOG_TRIVIAL(trace) << "Session " << notification->dwSessionId << " changed";
+            BOOST_LOG_TRIVIAL(trace) << format(TEXT("Session %1% changed")) % notification->dwSessionId;
             switch (dwEventType) {
                 case WTS_SESSION_LOGON:
                 {
@@ -418,7 +421,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                     logging_lock_guard session_guard(context->session_mutex, "logoff");
                     auto const it = context->sessions.find(notification->dwSessionId);
                     if (it == context->sessions.end()) {
-                        BOOST_LOG_TRIVIAL(info) << "Session is not known. Ignored.";
+                        BOOST_LOG_TRIVIAL(info) << "unknown session; ignored.";
                     } else {
                         it->second.running = false;
                         SetEvent(context->SessionChange);
@@ -438,14 +441,13 @@ void DeleteRegistryKey(HKEY key, TCHAR const* name)
     LONG const Result = RegDeleteValue(key, name);
     switch (Result) {
         case ERROR_SUCCESS:
-            BOOST_LOG_TRIVIAL(info) << "Deleted " << name << " key";
+            BOOST_LOG_TRIVIAL(info) << format(TEXT("Deleted %1% key")) % name;
             break;
         case ERROR_FILE_NOT_FOUND:
-            BOOST_LOG_TRIVIAL(trace) << name << " key does not exist";
+            BOOST_LOG_TRIVIAL(trace) << format(TEXT("%1% key does not exist")) % name;
             break;
         default:
-            BOOST_LOG_TRIVIAL(error) << "Error deleting " << name << " key: "
-                << Result;
+            BOOST_LOG_TRIVIAL(error) << format(TEXT("Error deleting %1% key: %2%")) % name % Result;
             break;
     }
 }
@@ -502,7 +504,7 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
 {
     if (check_range(min, max, value))
         return true;
-    BOOST_LOG_TRIVIAL(warning) << boost::format("%1% %2% not in range [%3%,%4%)") % label % value % min % max;
+    BOOST_LOG_TRIVIAL(warning) << format(TEXT("%1% %2% not in range [%3%,%4%)")) % label % value % min % max;
     return false;
 }
 
