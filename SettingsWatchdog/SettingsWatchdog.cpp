@@ -508,6 +508,16 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
     return false;
 }
 
+template <typename M, typename F>
+void map_erase_if(M& m, F predicate)
+{
+    for (auto it = m.begin(); it != m.end(); )
+        if (predicate(*it))
+            m.erase(it++);
+        else
+            ++it;
+}
+
 void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
     BOOST_LOG_FUNC();
@@ -520,7 +530,6 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             Event(),
             Event(),
             0
-            // TODO initialize context.sessions with current session list
         };
         try {
             DWORD starting_checkpoint = 0;
@@ -587,9 +596,11 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 auto const FixedWaitObjectCount = wait_handles.size();
                 {
                     logging_lock_guard session_guard(context.session_mutex, "pre-wait");
-                    for (auto it = context.sessions.begin(); it != context.sessions.end(); ++it) {
-                        wait_handles.push_back(it->second.notification);
-                    }
+                    boost::push_back(
+                        wait_handles,
+                        context.sessions
+                        | boost::adaptors::map_values
+                        | boost::adaptors::transformed(std::mem_fn(&SessionData::notification)));
                 }
                 if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
                     wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
@@ -625,21 +636,21 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         BOOST_LOG_TRIVIAL(trace) << "Session list changed";
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
-                        // TODO replace this with algorithm(s) to avoid incrementing `it`
-                        for (auto it = context.sessions.begin(); it != context.sessions.end(); ) {
-                            auto& session = it->second;
-                            if (!session.running) {
-                                // Remove no-longer-running session
-                                it = context.sessions.erase(it);
-                                continue;
-                            }
-                            if (session.new_) {
+                        map_erase_if(context.sessions, [](std::map<DWORD, SessionData>::value_type const& item) {
+                            return !item.second.running;
+                        });
+                        boost::for_each(
+                            context.sessions
+                            | boost::adaptors::map_values
+                            | boost::adaptors::filtered(
+                                [](SessionData const& session) {
+                                    return session.new_;
+                                }),
+                            [](SessionData& session) {
                                 // TODO Initialize new sessions
                                 session.new_ = false;
                                 EstablishNotification(session.key, session.notification);
-                            }
-                            ++it;
-                        }
+                            });
                         break;
                     }
                     default:

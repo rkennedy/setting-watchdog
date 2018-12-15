@@ -13,6 +13,7 @@
 #include <sddl.h>
 
 #include <algorithm>
+#include <functional>
 #include <iostream>
 #include <iomanip>
 #include <map>
@@ -38,3 +39,8 @@
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/phoenix.hpp>
 #include <boost/program_options.hpp>
+#include <boost/range/adaptor/filtered.hpp>
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/adaptor/transformed.hpp>
+#include <boost/range/algorithm/for_each.hpp>
+#include <boost/range/algorithm_ext/push_back.hpp>
