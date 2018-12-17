@@ -32,6 +32,8 @@
 #include <boost/log/expressions.hpp>
 #include <boost/log/sinks/text_file_backend.hpp>
 #include <boost/log/support/date_time.hpp>
+#include <boost/log/sources/global_logger_storage.hpp>
+#include <boost/log/sources/severity_logger.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/common_attributes.hpp>
 #include <boost/log/utility/setup/console.hpp>
