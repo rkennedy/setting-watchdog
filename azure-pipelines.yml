@@ -2,7 +2,7 @@
 # https://aka.ms/yaml
 
 pool:
-  vmImage: vs2017-win2016
+  vmImage: windows-2019
 
 variables:
   configuration: Release
@@ -19,7 +19,7 @@ steps:
 
 - task: VSBuild@1
   inputs:
-    vsVersion: 15.0
+    vsVersion: 16.0
     solution: '**/*.sln'
     msbuildArchitecture: '$(platform)'
     configuration: '$(configuration)'
@@ -35,14 +35,3 @@ steps:
   inputs:
     pathtoPublish: '$(Build.ArtifactStagingDirectory)'
     artifactName: files
-
-- task: Bash@3
-  condition: succeededOrFailed()
-  inputs:
-    targetType: inline
-    script: |
-      msg=$(head -1 <<< "${BUILD_SOURCEVERSIONMESSAGE}")
-      curl -X POST -d '{ "value1": "$(Agent.JobStatus)", "value2": "https://dev.azure.com/kennedyri/watchdog-build/_build/results?buildId='${BUILD_BUILDURI##*/}'", "value3": "$(Build.SourceBranchName): '"${msg}"'" }' -H 'Content-Type: application/json' 'https://maker.ifttt.com/trigger/watchdog-build-notify/with/key/$(ifttt.key)'
-  env:
-    BUILD_BUILDURI: $(Build.BuildUri)
-    BUILD_SOURCEVERSIONMESSAGE: $(Build.SourceVersionMessage)
