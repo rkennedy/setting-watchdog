@@ -300,11 +300,11 @@ public:
     { }
     template <typename T> friend std::basic_ostream<T>& operator<<(std::basic_ostream<T>& os, SidFormatter const& sf) {
         BOOST_LOG_FUNC();
-	T* value;
+        T* value;
         WinCheck(Convert(sf.m_sid, value), "converting string sid");
         os << value;
-	LocalFree(value);
-	return os;
+        LocalFree(value);
+        return os;
     }
 };
 
