@@ -2,7 +2,7 @@
 # https://aka.ms/yaml
 
 pool:
-  vmImage: vs2017-win2016
+  vmImage: windows-2019
 
 variables:
   configuration: Release
@@ -19,7 +19,7 @@ steps:
 
 - task: VSBuild@1
   inputs:
-    vsVersion: 15.0
+    vsVersion: 16.0
     solution: '**/*.sln'
     msbuildArchitecture: '$(platform)'
     configuration: '$(configuration)'
