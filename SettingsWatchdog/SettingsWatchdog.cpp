@@ -11,8 +11,8 @@ using format = boost::wformat;
 using format = boost::format;
 #endif
 
-auto const SystemPolicyKey = TEXT("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System");
-auto const DesktopPolicyKey = TEXT("Control Panel\\Desktop");
+auto const SystemPolicyKey = TEXT(R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)");
+auto const DesktopPolicyKey = TEXT(R"(Control Panel\Desktop)");
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
 template <typename T>
@@ -275,8 +275,7 @@ std::map<DWORD, std::string> const wait_results
 template <typename Map, typename T>
 typename Map::mapped_type get_with_default(Map const& map, typename Map::key_type const& key, T const& default_value)
 {
-    auto it = map.find(key);
-    if (it != map.end())
+    if (auto it = map.find(key); it != map.end())
         return it->second;
     return default_value;
 }
@@ -419,8 +418,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                 case WTS_SESSION_LOGOFF:
                 {
                     logging_lock_guard session_guard(context->session_mutex, "logoff");
-                    auto const it = context->sessions.find(notification->dwSessionId);
-                    if (it == context->sessions.end()) {
+                    if (auto const it = context->sessions.find(notification->dwSessionId); it == context->sessions.end()) {
                         BOOST_LOG_SEV(wdlog::get(), info) << "unknown session; ignored.";
                     } else {
                         it->second.running = false;
@@ -438,8 +436,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
 
 void DeleteRegistryKey(HKEY key, TCHAR const* name)
 {
-    LONG const Result = RegDeleteValue(key, name);
-    switch (Result) {
+    switch (LONG const Result = RegDeleteValue(key, name); Result) {
         case ERROR_SUCCESS:
             BOOST_LOG_SEV(wdlog::get(), info) << format(TEXT("Deleted %1% key")) % name;
             break;
@@ -730,7 +727,7 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
     );
     bl::add_console_log()->set_formatter(formatter);
     bl::add_file_log(
-        bl::keywords::file_name = "C:\\SettingsWatchdog.log",
+        bl::keywords::file_name = R"(C:\SettingsWatchdog.log)",
         bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
         bl::keywords::auto_flush = true
     )->set_formatter(formatter);
