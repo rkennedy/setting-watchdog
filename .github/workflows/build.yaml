@@ -21,7 +21,7 @@ jobs:
         key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.config') }}
 
     - name: Get packages
-      if: "!steps.cache.outputs.cache-hit"
+      #if: "!steps.cache.outputs.cache-hit"
       run: nuget restore SettingsWatchdog.sln
 
     - name: Build
