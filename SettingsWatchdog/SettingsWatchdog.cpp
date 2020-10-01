@@ -143,8 +143,8 @@ void InstallService()
                                 SERVICE_AUTO_START, self_path);
     BOOST_LOG_SEV(wdlog::get(), info) << "Service created";
 
-    SERVICE_DESCRIPTION description = { TEXT("Watch registry settings and set "
-        "them back to desired values") };
+    SERVICE_DESCRIPTION description = { const_cast<LPTSTR>(TEXT("Watch registry settings and set "
+        "them back to desired values")) };
     WinCheck(ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &description), "configuring service");
     BOOST_LOG_SEV(wdlog::get(), trace) << "Service configured";
 }
@@ -418,11 +418,11 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         {
             BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("session-change code %1%")) % get_with_default(session_change_codes, dwEventType, std::to_string(dwEventType)).c_str();
             auto const notification = static_cast<WTSSESSION_NOTIFICATION const*>(lpEventData);
-            if (notification->cbSize != sizeof WTSSESSION_NOTIFICATION) {
+            if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) {
                 // The OS is sending the wrong structure size, so let's pretend
                 // we don't know how to handle it.
                 BOOST_LOG_SEV(wdlog::get(), error) << format(TEXT("Expected struct size %1% but got %2% instead"))
-                    % sizeof WTSSESSION_NOTIFICATION
+                    % sizeof(WTSSESSION_NOTIFICATION)
                     % notification->cbSize;
                 return ERROR_CALL_NOT_IMPLEMENTED;
             }
@@ -773,7 +773,7 @@ int main(int argc, char* argv[])
         }
 
         SERVICE_TABLE_ENTRY ServiceTable[] = {
-            { TEXT("SettingsWatchdog"), SettingsWatchdogMain },
+            { const_cast<LPTSTR>(TEXT("SettingsWatchdog")), SettingsWatchdogMain },
             { nullptr, nullptr }
         };
 
