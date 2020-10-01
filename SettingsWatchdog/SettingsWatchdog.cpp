@@ -91,7 +91,7 @@ public:
     explicit AutoCloseHandle(HANDLE handle = NULL):
         m_handle(handle)
     { }
-    AutoCloseHandle(AutoCloseHandle&& other):
+    AutoCloseHandle(AutoCloseHandle&& other) noexcept:
         m_handle(other.m_handle)
     {
         BOOST_LOG_FUNC();
@@ -184,7 +184,7 @@ public:
     RegKey(HKEY key, TCHAR const* name, DWORD permissions):
         m_key(OpenRegKey(key, name, 0, permissions))
     {}
-    RegKey(RegKey&& other):
+    RegKey(RegKey&& other) noexcept:
         m_key(other.m_key)
     {
         other.m_key = NULL;
