@@ -417,7 +417,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         case SERVICE_CONTROL_SESSIONCHANGE:
         {
             BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("session-change code %1%")) % get_with_default(session_change_codes, dwEventType, std::to_string(dwEventType)).c_str();
-            auto const notification = static_cast<WTSSESSION_NOTIFICATION*>(lpEventData);
+            auto const notification = static_cast<WTSSESSION_NOTIFICATION const*>(lpEventData);
             if (notification->cbSize != sizeof WTSSESSION_NOTIFICATION) {
                 // The OS is sending the wrong structure size, so let's pretend
                 // we don't know how to handle it.
