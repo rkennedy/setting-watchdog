@@ -216,6 +216,25 @@ struct SessionData: private boost::noncopyable
     {}
 };
 
+template <typename T>
+class ServiceContext: public T
+{
+public:
+    ServiceContext(LPCTSTR lpServiceName, LPHANDLER_FUNCTION_EX lpHandlerProc):
+        T(),
+        StatusHandle(WinCheck(RegisterServiceCtrlHandlerEx(lpServiceName, lpHandlerProc, this),
+                              "registering service handler"))
+    {}
+
+    void SetServiceStatus(SERVICE_STATUS& lpServiceStatus) const {
+        WinCheck(::SetServiceStatus(StatusHandle, &lpServiceStatus),
+                 "setting service status");
+    }
+private:
+    // MSDN: "The service status handle does not have to be closed."
+    SERVICE_STATUS_HANDLE StatusHandle;
+};
+
 struct SettingsWatchdogContext
 {
     Event StopEvent;
@@ -223,15 +242,6 @@ struct SettingsWatchdogContext
     DWORD stopping_checkpoint;
     std::mutex session_mutex;
     std::map<DWORD, SessionData> sessions;
-    // MSDN: "The service status handle does not have to be closed."
-    SERVICE_STATUS_HANDLE StatusHandle;
-    SettingsWatchdogContext(LPCTSTR lpServiceName, LPHANDLER_FUNCTION_EX lpHandlerProc):
-        StopEvent(),
-        SessionChange(),
-        stopping_checkpoint(),
-        StatusHandle(WinCheck(RegisterServiceCtrlHandlerEx(lpServiceName, lpHandlerProc, this),
-                              "registering service handler"))
-    {}
 };
 
 std::map<DWORD, std::string> const control_names
@@ -328,7 +338,7 @@ struct logging_lock_guard
     }
 };
 
-void add_session(DWORD dwSessionId, SettingsWatchdogContext* context)
+void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
 {
     BOOST_LOG_FUNC();
     BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("adding session ID %1%")) % dwSessionId;
@@ -384,7 +394,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
                             LPVOID lpEventData, LPVOID lpContext)
 {
     BOOST_LOG_FUNC();
-    auto const context = static_cast<SettingsWatchdogContext*>(lpContext);
+    auto const context = static_cast<ServiceContext<SettingsWatchdogContext>*>(lpContext);
 
     BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("Service control %1% (%2%)")) % dwControl % get_with_default(control_names, dwControl, "unknown").c_str();
     switch (dwControl) {
@@ -396,12 +406,12 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         {
             SERVICE_STATUS stop_pending = { ServiceType, SERVICE_STOP_PENDING,
                 0, NO_ERROR, 0, context->stopping_checkpoint++, 10 };
-            SetServiceStatus(context->StatusHandle, &stop_pending);
+            context->SetServiceStatus(stop_pending);
 
             SetEvent(context->StopEvent);
 
             stop_pending.dwCheckPoint = context->stopping_checkpoint++;
-            SetServiceStatus(context->StatusHandle, &stop_pending);
+            context->SetServiceStatus(stop_pending);
             return NO_ERROR;
         }
         case SERVICE_CONTROL_SESSIONCHANGE:
@@ -528,12 +538,12 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
     BOOST_LOG_FUNC();
     try {
         BOOST_LOG_SEV(wdlog::get(), debug) << "Establishing service context";
-        SettingsWatchdogContext context(TEXT("SettingsWatchdog"), ServiceHandler);
+        ServiceContext<SettingsWatchdogContext> context(TEXT("SettingsWatchdog"), ServiceHandler);
         try {
             DWORD starting_checkpoint = 0;
             SERVICE_STATUS start_pending = { ServiceType, SERVICE_START_PENDING, 0,
                 NO_ERROR, 0, starting_checkpoint++, 10 };
-            SetServiceStatus(context.StatusHandle, &start_pending);
+            context.SetServiceStatus(start_pending);
 
             // Event handle must be created first because it must outlive its
             // associated registry key. When we close the registry key, the
@@ -548,7 +558,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             BOOST_LOG_SEV(wdlog::get(), debug) << "Opened target registry key";
 
             start_pending.dwCheckPoint = starting_checkpoint++;
-            SetServiceStatus(context.StatusHandle, &start_pending);
+            context.SetServiceStatus(start_pending);
 
             WTS_SESSION_INFO_1* raw_session_info;
             DWORD session_count;
@@ -572,14 +582,14 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 });
 
             start_pending.dwCheckPoint = starting_checkpoint++;
-            SetServiceStatus(context.StatusHandle, &start_pending);
+            context.SetServiceStatus(start_pending);
 
             EstablishNotification(system_key, system_notify_event);
 
             SERVICE_STATUS started = { ServiceType, SERVICE_RUNNING,
                 SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE, NO_ERROR, 0, 0,
                 0 };
-            SetServiceStatus(context.StatusHandle, &started);
+            context.SetServiceStatus(started);
 
             RemoveLoginMessage(system_key);
             RemoveAutosignonRestriction(system_key);
@@ -625,7 +635,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         SERVICE_STATUS stop_pending = { ServiceType,
                             SERVICE_STOP_PENDING, 0, NO_ERROR, 0,
                             context.stopping_checkpoint++, 10 };
-                        SetServiceStatus(context.StatusHandle, &stop_pending);
+                        context.SetServiceStatus(stop_pending);
                         stop_requested = true;
                         break;
                     }
@@ -683,16 +693,16 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             } while (!stop_requested && PrepareNextIteration());
             SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR,
                 0, 0, 0 };
-            SetServiceStatus(context.StatusHandle, &stopped);
+            context.SetServiceStatus(stopped);
         } catch (std::system_error const& ex) {
             if (ex.code().category() == std::system_category()) {
                 SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0,
                     boost::numeric_cast<DWORD>(ex.code().value()), 0, 0, 0 };
-                SetServiceStatus(context.StatusHandle, &stopped);
+                context.SetServiceStatus(stopped);
             } else {
                 SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0,
                     ERROR_SERVICE_SPECIFIC_ERROR, boost::numeric_cast<DWORD>(ex.code().value()), 0, 0 };
-                SetServiceStatus(context.StatusHandle, &stopped);
+                context.SetServiceStatus(stopped);
             }
             throw;
         }
