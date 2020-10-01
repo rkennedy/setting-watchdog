@@ -218,12 +218,20 @@ struct SessionData: private boost::noncopyable
 
 struct SettingsWatchdogContext
 {
-    SERVICE_STATUS_HANDLE StatusHandle;
     Event StopEvent;
     Event SessionChange;
     DWORD stopping_checkpoint;
     std::mutex session_mutex;
     std::map<DWORD, SessionData> sessions;
+    // MSDN: "The service status handle does not have to be closed."
+    SERVICE_STATUS_HANDLE StatusHandle;
+    SettingsWatchdogContext(LPCTSTR lpServiceName, LPHANDLER_FUNCTION_EX lpHandlerProc):
+        StopEvent(),
+        SessionChange(),
+        stopping_checkpoint(),
+        StatusHandle(WinCheck(RegisterServiceCtrlHandlerEx(lpServiceName, lpHandlerProc, this),
+                              "registering service handler"))
+    {}
 };
 
 std::map<DWORD, std::string> const control_names
@@ -520,14 +528,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
     BOOST_LOG_FUNC();
     try {
         BOOST_LOG_SEV(wdlog::get(), debug) << "Establishing service context";
-        SettingsWatchdogContext context = {
-            WinCheck(RegisterServiceCtrlHandlerEx(TEXT("SettingsWatchdog"),
-                                                  ServiceHandler, &context),
-                     "registering service handler"),
-            Event(),
-            Event(),
-            0
-        };
+        SettingsWatchdogContext context(TEXT("SettingsWatchdog"), ServiceHandler);
         try {
             DWORD starting_checkpoint = 0;
             SERVICE_STATUS start_pending = { ServiceType, SERVICE_START_PENDING, 0,
