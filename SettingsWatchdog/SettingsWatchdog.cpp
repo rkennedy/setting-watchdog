@@ -734,7 +734,7 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
             bl::keywords::format = "%n",
             bl::keywords::incomplete_marker = "",
             bl::keywords::depth = 1)
-        % bl::expressions::smessage
+        % bl::expressions::message
     );
     bl::add_console_log()->set_formatter(formatter);
     bl::add_file_log(
