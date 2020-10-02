@@ -58,6 +58,7 @@
       <SDLCheck>true</SDLCheck>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
