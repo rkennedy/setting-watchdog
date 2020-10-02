@@ -239,7 +239,7 @@ struct SettingsWatchdogContext
 {
     Event StopEvent;
     Event SessionChange;
-    DWORD stopping_checkpoint;
+    DWORD stopping_checkpoint = 0;
     std::mutex session_mutex;
     std::map<DWORD, SessionData> sessions;
 };
