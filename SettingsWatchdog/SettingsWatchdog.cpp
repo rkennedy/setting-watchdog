@@ -135,12 +135,12 @@ void InstallService()
 {
     BOOST_LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
-    TCHAR self_path[MAX_PATH];
-    WinCheck(GetModuleFileName(NULL, self_path, MAX_PATH), "fetching current file name");
-    BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("Current file name is %1%")) % self_path;
+    auto const self_path = boost::dll::program_location();
+    BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("Current file name is %1%")) % self_path.native();
+
     ServiceHandle const service(handle, TEXT("SettingsWatchdog"),
                                 TEXT("Settings Watchdog"), ServiceType,
-                                SERVICE_AUTO_START, self_path);
+                                SERVICE_AUTO_START, self_path.c_str());
     BOOST_LOG_SEV(wdlog::get(), info) << "Service created";
 
     SERVICE_DESCRIPTION description = { const_cast<LPTSTR>(TEXT("Watch registry settings and set "
@@ -749,6 +749,8 @@ int main(int argc, char* argv[])
 {
     BOOST_LOG_FUNC();
     try {
+        BOOST_LOG_SEV(wdlog::get(), info) << "Running " << boost::dll::program_location().native();
+
         po::options_description desc("Allowed options");
         desc.add_options()
             ("help,h", "This help message")

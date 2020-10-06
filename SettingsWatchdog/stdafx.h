@@ -24,6 +24,7 @@
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/core/noncopyable.hpp>
+#include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <boost/format.hpp>
 #include <boost/log/attributes/constant.hpp>
