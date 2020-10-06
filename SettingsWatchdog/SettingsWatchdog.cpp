@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SettingsWatchdog.h"
+#include "git-commit.hpp"
 
 namespace po = boost::program_options;
 namespace bl = boost::log;
@@ -750,6 +751,7 @@ int main(int argc, char* argv[])
     BOOST_LOG_FUNC();
     try {
         BOOST_LOG_SEV(wdlog::get(), info) << "Running " << boost::dll::program_location().native();
+        BOOST_LOG_SEV(wdlog::get(), trace) << "Commit " << git_commit;
 
         po::options_description desc("Allowed options");
         desc.add_options()
