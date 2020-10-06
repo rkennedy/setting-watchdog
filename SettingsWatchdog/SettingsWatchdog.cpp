@@ -1,5 +1,5 @@
-#include "stdafx.h"
-#include "SettingsWatchdog.h"
+#include "stdafx.hpp"
+#include "SettingsWatchdog.hpp"
 #include "git-commit.hpp"
 
 namespace po = boost::program_options;
