@@ -22,6 +22,9 @@
 #include <system_error>
 #include <vector>
 
+#include <codeanalysis/warnings.h>
+#pragma warning(push)
+#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
@@ -47,3 +50,4 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#pragma warning(pop)

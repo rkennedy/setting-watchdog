@@ -137,7 +137,10 @@ void InstallService()
     BOOST_LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
     auto const self_path = boost::dll::program_location();
+#pragma warning(push)
+#pragma warning(disable: 26812) // Enum is unscoped. Prefer enum class.
     BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("Current file name is %1%")) % self_path.native();
+#pragma warning(pop)
 
     ServiceHandle const service(handle, TEXT("SettingsWatchdog"),
                                 TEXT("Settings Watchdog"), ServiceType,
@@ -565,7 +568,10 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             DWORD session_count;
             BOOST_LOG_SEV(wdlog::get(), debug) << "enumerating sessions";
             DWORD level = 1;
+#pragma warning(push)
+#pragma warning(disable: 6387) // Param 1 could be zero
             WinCheck(WTSEnumerateSessionsEx(WTS_CURRENT_SERVER_HANDLE, &level, 0, &raw_session_info, &session_count), "getting session list");
+#pragma warning(pop)
             std::shared_ptr<WTS_SESSION_INFO_1> session_info(
                 raw_session_info,
                 [&session_count](void* info) {
