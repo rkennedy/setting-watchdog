@@ -68,7 +68,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BOOST_DLL_USE_STD_FS;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
   </ItemDefinitionGroup>
@@ -78,7 +78,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BOOST_DLL_USE_STD_FS;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -140,4 +140,28 @@
     <Error Condition="!Exists('..\packages\boost_system-vc142.1.72.0.0\build\boost_system-vc142.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\boost_system-vc142.1.72.0.0\build\boost_system-vc142.targets'))" />
     <Error Condition="!Exists('..\packages\boost_thread-vc142.1.72.0.0\build\boost_thread-vc142.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\boost_thread-vc142.1.72.0.0\build\boost_thread-vc142.targets'))" />
   </Target>
+  <Target Name="GenerateCommitCode" BeforeTargets="BeforeBuildGenerateSources">
+    <Exec Command="git describe --always --match= --abbrev=40 --dirty" ConsoleToMsBuild="true">
+      <Output PropertyName="GitCommit" TaskParameter="ConsoleOutput"/>
+    </Exec>
+    <PropertyGroup>
+      <CommitCode><![CDATA[
+#include <windows.h>
+inline auto git_commit = TEXT(R"($(GitCommit))")%3b
+]]></CommitCode>
+    </PropertyGroup>
+    <WriteLinesToFile
+      File="git-commit.hpp"
+      Lines="$(CommitCode)"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+      />
+  </Target>
+  <PropertyGroup>
+    <CleanDependsOn>DeleteCommitCode; $(CleanDependsOn)</CleanDependsOn>
+  </PropertyGroup>
+  <Target Name="DeleteCommitCode">
+    <Delete Files="git-commit.hpp"/>
+  </Target>
+  <!-- vim: set et sw=2: -->
 </Project>
