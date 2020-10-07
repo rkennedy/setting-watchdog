@@ -13,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include <vector>
 
 #include <codeanalysis/warnings.h>
@@ -32,6 +33,7 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <boost/scope_exit.hpp>
 
 #pragma warning(pop)
 
@@ -228,16 +230,6 @@ typename Map::mapped_type get_with_default(Map const& map, typename Map::key_typ
     return default_value;
 }
 
-BOOL Convert(PSID sid, char*& str)
-{
-    return ConvertSidToStringSidA(sid, &str);
-}
-
-BOOL Convert(PSID sid, wchar_t*& str)
-{
-    return ConvertSidToStringSidW(sid, &str);
-}
-
 class SidFormatter
 {
     PSID m_sid;
@@ -248,10 +240,16 @@ public:
     template <typename T> friend std::basic_ostream<T>& operator<<(std::basic_ostream<T>& os, SidFormatter const& sf) {
         BOOST_LOG_FUNC();
         T* value;
-        WinCheck(Convert(sf.m_sid, value), "converting string sid");
-        os << value;
-        LocalFree(value);
-        return os;
+        if constexpr (std::is_same_v<T, char>) {
+            WinCheck(ConvertSidToStringSidA(sf.m_sid, &value), "converting string sid");
+        } else {
+            WinCheck(ConvertSidToStringSidW(sf.m_sid, &value), "converting string sid");
+        }
+        BOOST_SCOPE_EXIT(&value)
+        {
+            LocalFree(value);
+        } BOOST_SCOPE_EXIT_END;
+        return os << value;
     }
 };
 
