@@ -1,4 +1,5 @@
 #include "logging.hpp"
+#include "errors.hpp"
 #include <windows.h>
 #include <wtsapi32.h>
 #include <sddl.h>
@@ -47,25 +48,6 @@ using format = boost::format;
 auto const SystemPolicyKey = TEXT(R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)");
 auto const DesktopPolicyKey = TEXT(R"(Control Panel\Desktop)");
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
-
-template <typename T>
-T&& WinCheck(T&& arg, char const* message)
-{
-    if (!arg) {
-        std::error_code ec(GetLastError(), std::system_category());
-        throw std::system_error(ec, message);
-    }
-    return std::move(arg);
-}
-
-LONG RegCheck(LONG arg, char const* message)
-{
-    if (arg != ERROR_SUCCESS) {
-        std::error_code ec(arg, std::system_category());
-        throw std::system_error(ec, message);
-    }
-    return arg;
-}
 
 class BaseServiceHandle
 {
