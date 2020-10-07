@@ -5,8 +5,6 @@
 
 #pragma once
 
-#include "targetver.hpp"
-
 #include <windows.h>
 #include <wtsapi32.h>
 #include <sddl.h>
