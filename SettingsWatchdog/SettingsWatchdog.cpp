@@ -1,5 +1,6 @@
 #include "logging.hpp"
 #include "errors.hpp"
+#include "handles.hpp"
 #include <windows.h>
 #include <wtsapi32.h>
 #include <sddl.h>
@@ -48,84 +49,6 @@ using format = boost::format;
 auto const SystemPolicyKey = TEXT(R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)");
 auto const DesktopPolicyKey = TEXT(R"(Control Panel\Desktop)");
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
-
-class BaseServiceHandle
-{
-private:
-    SC_HANDLE const m_handle;
-    BaseServiceHandle(BaseServiceHandle const&) = delete;
-    BaseServiceHandle() = delete;
-protected:
-    BaseServiceHandle(SC_HANDLE const handle, std::string const& action):
-        m_handle(WinCheck(handle, action.c_str()))
-    { }
-    ~BaseServiceHandle()
-    {
-        BOOST_LOG_FUNC();
-        CloseServiceHandle(m_handle);
-    }
-public:
-    operator SC_HANDLE() const {
-        BOOST_LOG_FUNC();
-        return m_handle;
-    }
-};
-
-class ServiceManagerHandle: public BaseServiceHandle
-{
-public:
-    explicit ServiceManagerHandle(DWORD permissions):
-        BaseServiceHandle(OpenSCManager(nullptr, nullptr, permissions),
-                          "opening service control manager")
-    { }
-};
-
-class ServiceHandle: public BaseServiceHandle
-{
-public:
-    ServiceHandle(ServiceManagerHandle const& manager, TCHAR const* name,
-                  TCHAR const* display_name, DWORD type, DWORD start,
-                  TCHAR const* path):
-        BaseServiceHandle(CreateService(manager, name, display_name,
-                                        SERVICE_ALL_ACCESS, type, start,
-                                        SERVICE_ERROR_NORMAL, path, nullptr,
-                                        nullptr, nullptr, nullptr, nullptr),
-                          "creating service")
-    { }
-    ServiceHandle(ServiceManagerHandle const& manager, TCHAR const* name,
-                  DWORD access):
-        BaseServiceHandle(OpenService(manager, name, access), "opening service")
-    { }
-};
-
-class AutoCloseHandle: private boost::noncopyable
-{
-private:
-    HANDLE m_handle;
-public:
-    explicit AutoCloseHandle(HANDLE handle = NULL):
-        m_handle(handle)
-    { }
-    AutoCloseHandle(AutoCloseHandle&& other) noexcept:
-        m_handle(other.m_handle)
-    {
-        BOOST_LOG_FUNC();
-        other.m_handle = NULL;
-    }
-    ~AutoCloseHandle() {
-        BOOST_LOG_FUNC();
-        if (m_handle)
-            CloseHandle(m_handle);
-    }
-    HANDLE* operator&() {
-        BOOST_LOG_FUNC();
-        return &m_handle;
-    }
-    operator HANDLE() const {
-        BOOST_LOG_FUNC();
-        return m_handle;
-    }
-};
 
 class AutoFreeWTSString: private boost::noncopyable
 {
@@ -176,17 +99,6 @@ void UninstallService()
     WinCheck(DeleteService(service), "deleting service");
     BOOST_LOG_SEV(wdlog::get(), info) << "Service deleted";
 }
-
-class Event: public AutoCloseHandle
-{
-public:
-    Event():
-        AutoCloseHandle(WinCheck(CreateEvent(nullptr,
-                                             true, // bManualReset
-                                             false, // bInitialState
-                                             nullptr), "creating event"))
-    { }
-};
 
 HKEY OpenRegKey(HKEY hKey, LPCTSTR lpSubKey, DWORD ulOptions, REGSAM samDesired)
 {

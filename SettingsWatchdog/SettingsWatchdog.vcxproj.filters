@@ -27,6 +27,9 @@
     <ClCompile Include="errors.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="handles.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="SettingsWatchdog.rc">
@@ -49,6 +52,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="errors.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="handles.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
