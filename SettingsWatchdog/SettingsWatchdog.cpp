@@ -1,3 +1,4 @@
+#include "logging.hpp"
 #include <windows.h>
 #include <wtsapi32.h>
 #include <sddl.h>
@@ -15,51 +16,26 @@
 #include <codeanalysis/warnings.h>
 #pragma warning(push)
 #pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
+
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
-#include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <boost/format.hpp>
-#include <boost/log/attributes/constant.hpp>
-#include <boost/log/attributes/function.hpp>
 #include <boost/log/attributes/named_scope.hpp>
-#include <boost/log/expressions.hpp>
-#include <boost/log/sinks/text_file_backend.hpp>
-#include <boost/log/support/date_time.hpp>
-#include <boost/log/sources/global_logger_storage.hpp>
-#include <boost/log/sources/severity_logger.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/utility/setup/common_attributes.hpp>
-#include <boost/log/utility/setup/console.hpp>
-#include <boost/log/utility/setup/file.hpp>
+#include <boost/log/sources/severity_feature.hpp>
 #include <boost/numeric/conversion/cast.hpp>
-#include <boost/phoenix.hpp>
 #include <boost/program_options.hpp>
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+
 #pragma warning(pop)
 
 #include "git-commit.hpp"
 
-using boost::log::trivial::trace;
-using boost::log::trivial::debug;
-using boost::log::trivial::info;
-using boost::log::trivial::warning;
-using boost::log::trivial::error;
-using boost::log::trivial::fatal;
-#ifdef UNICODE
-using logger_type = boost::log::sources::wseverity_logger_mt<boost::log::trivial::severity_level>;
-#else
-using logger_type = boost::log::sources::severity_logger_mt<boost::log::trivial::severity_level>;
-#endif
-
-BOOST_LOG_GLOBAL_LOGGER(wdlog, logger_type)
-
 namespace po = boost::program_options;
-namespace bl = boost::log;
 
 #define VALUE_NAME(x) { x, #x }
 #if UNICODE
@@ -773,39 +749,6 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         BOOST_LOG_SEV(wdlog::get(), error) << format(TEXT("Error (%1%) %2%")) % ex.code() % boost::algorithm::trim_copy(std::string(ex.what())).c_str();
         return;
     }
-}
-
-BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", DWORD)
-BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", DWORD)
-
-BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
-{
-    logger_type lg;
-    lg.add_attribute("TimeStamp", bl::attributes::local_clock());
-    lg.add_attribute("ProcessId", bl::attributes::make_constant(GetCurrentProcessId()));
-    lg.add_attribute("ThreadId", bl::attributes::make_function(&GetCurrentThreadId));
-    lg.add_attribute("Scope", bl::attributes::named_scope());
-    bl::formatter formatter = (
-        bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
-        % bl::expressions::format_date_time<boost::posix_time::ptime>(
-            "TimeStamp", "%Y-%m-%d %H:%M:%S")
-        % process_id
-        % thread_id
-        % bl::trivial::severity
-        % bl::expressions::format_named_scope(
-            "Scope",
-            bl::keywords::format = "%n",
-            bl::keywords::incomplete_marker = "",
-            bl::keywords::depth = 1)
-        % bl::expressions::message
-    );
-    bl::add_console_log()->set_formatter(formatter);
-    bl::add_file_log(
-        bl::keywords::file_name = R"(C:\SettingsWatchdog.log)",
-        bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
-        bl::keywords::auto_flush = true
-    )->set_formatter(formatter);
-    return lg;
 }
 
 int main(int argc, char* argv[])
