@@ -1,3 +1,4 @@
+#include "string-maps.hpp"
 #include "registry.hpp"
 #include "logging.hpp"
 #include "errors.hpp"
@@ -41,7 +42,6 @@
 
 namespace po = boost::program_options;
 
-#define VALUE_NAME(x) { x, #x }
 #if UNICODE
 using format = boost::wformat;
 #else
@@ -145,60 +145,6 @@ struct SettingsWatchdogContext
     std::mutex session_mutex;
     std::map<DWORD, SessionData> sessions;
 };
-
-std::map<DWORD, std::string> const control_names
-{
-    VALUE_NAME(SERVICE_CONTROL_CONTINUE),
-    VALUE_NAME(SERVICE_CONTROL_INTERROGATE),
-    VALUE_NAME(SERVICE_CONTROL_NETBINDADD),
-    VALUE_NAME(SERVICE_CONTROL_NETBINDDISABLE),
-    VALUE_NAME(SERVICE_CONTROL_NETBINDENABLE),
-    VALUE_NAME(SERVICE_CONTROL_NETBINDREMOVE),
-    VALUE_NAME(SERVICE_CONTROL_PARAMCHANGE),
-    VALUE_NAME(SERVICE_CONTROL_PAUSE),
-    VALUE_NAME(SERVICE_CONTROL_PRESHUTDOWN),
-    VALUE_NAME(SERVICE_CONTROL_SHUTDOWN),
-    VALUE_NAME(SERVICE_CONTROL_STOP),
-    VALUE_NAME(SERVICE_CONTROL_DEVICEEVENT),
-    VALUE_NAME(SERVICE_CONTROL_HARDWAREPROFILECHANGE),
-    VALUE_NAME(SERVICE_CONTROL_POWEREVENT),
-    VALUE_NAME(SERVICE_CONTROL_SESSIONCHANGE),
-    VALUE_NAME(SERVICE_CONTROL_TIMECHANGE),
-    VALUE_NAME(SERVICE_CONTROL_TRIGGEREVENT),
-    //VALUE_NAME(SERVICE_CONTROL_USERMODEREBOOT),
-};
-
-std::map<DWORD, std::string> const session_change_codes
-{
-    VALUE_NAME(WTS_CONSOLE_CONNECT),
-    VALUE_NAME(WTS_CONSOLE_DISCONNECT),
-    VALUE_NAME(WTS_REMOTE_CONNECT),
-    VALUE_NAME(WTS_REMOTE_DISCONNECT),
-    VALUE_NAME(WTS_SESSION_LOGON),
-    VALUE_NAME(WTS_SESSION_LOGOFF),
-    VALUE_NAME(WTS_SESSION_LOCK),
-    VALUE_NAME(WTS_SESSION_LOCK),
-    VALUE_NAME(WTS_SESSION_REMOTE_CONTROL),
-    VALUE_NAME(WTS_SESSION_REMOTE_CONTROL),
-    VALUE_NAME(WTS_SESSION_TERMINATE),
-};
-
-std::map<DWORD, std::string> const wait_results
-{
-    VALUE_NAME(WAIT_OBJECT_0),
-    VALUE_NAME(WAIT_OBJECT_0 + 1),
-    VALUE_NAME(WAIT_OBJECT_0 + 2),
-    VALUE_NAME(WAIT_TIMEOUT),
-    VALUE_NAME(WAIT_FAILED),
-};
-
-template <typename Map, typename T>
-typename Map::mapped_type get_with_default(Map const& map, typename Map::key_type const& key, T const& default_value)
-{
-    if (auto it = map.find(key); it != map.end())
-        return it->second;
-    return default_value;
-}
 
 class SidFormatter
 {

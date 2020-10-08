@@ -97,6 +97,7 @@
     <ClCompile Include="registry.cpp" />
     <ClCompile Include="SettingsWatchdog.cpp" />
     <ClCompile Include="logging.cpp" />
+    <ClCompile Include="string-maps.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="SettingsWatchdog.rc" />
@@ -113,6 +114,7 @@
     <ClInclude Include="logging.hpp" />
     <ClInclude Include="handles.hpp" />
     <ClInclude Include="registry.hpp" />
+    <ClInclude Include="string-maps.hpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
