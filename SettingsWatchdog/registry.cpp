@@ -49,16 +49,13 @@ void DeleteRegistryValue(HKEY key, TCHAR const* name)
 {
     switch (LONG const result = RegDeleteValue(key, name); result) {
         case ERROR_SUCCESS:
-            BOOST_LOG_SEV(wdlog::get(), info) << format(TEXT("Deleted %1% value")) % name;
+            WDLOG(info, "Deleted %1% value") % name;
             break;
         case ERROR_FILE_NOT_FOUND:
-#pragma warning(push)
-#pragma warning(disable: 26812)
-            BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("%1% value does not exist")) % name;
-#pragma warning(pop)
+            WDLOG(trace, "%1% value does not exist") % name;
             break;
         default:
-            BOOST_LOG_SEV(wdlog::get(), error) << format(TEXT("Error deleting %1% value: %2%")) % name % result;
+            WDLOG(error, "Error deleting %1% value: %2%") % name % result;
             break;
     }
 }

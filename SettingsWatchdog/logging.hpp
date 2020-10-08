@@ -4,6 +4,7 @@
 #pragma warning(push)
 #pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 
+#include <boost/format.hpp>
 #include <boost/log/sources/global_logger_storage.hpp>
 #include <boost/log/trivial.hpp>
 
@@ -22,3 +23,9 @@ using logger_type = boost::log::sources::severity_logger_mt<boost::log::trivial:
 #endif
 
 BOOST_LOG_GLOBAL_LOGGER(wdlog, logger_type)
+
+#if UNICODE
+#define WDLOG(sev, msg) BOOST_LOG_SEV(wdlog::get(), (sev)) << boost::wformat(TEXT(msg))
+#else
+#define WDLOG(sev, msg) BOOST_LOG_SEV(wdlog::get(), (sev)) << boost::format((msg))
+#endif
