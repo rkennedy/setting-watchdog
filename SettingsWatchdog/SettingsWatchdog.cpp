@@ -1,3 +1,4 @@
+#include "registry.hpp"
 #include "logging.hpp"
 #include "errors.hpp"
 #include "handles.hpp"
@@ -8,7 +9,6 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
-#include <iomanip>
 #include <map>
 #include <mutex>
 #include <string>
@@ -101,36 +101,6 @@ void UninstallService()
     WinCheck(DeleteService(service), "deleting service");
     BOOST_LOG_SEV(wdlog::get(), info) << "Service deleted";
 }
-
-HKEY OpenRegKey(HKEY hKey, LPCTSTR lpSubKey, DWORD ulOptions, REGSAM samDesired)
-{
-    HKEY result;
-    RegCheck(RegOpenKeyEx(hKey, lpSubKey, ulOptions, samDesired, &result), "opening registry key");
-    return result;
-}
-
-class RegKey: private boost::noncopyable
-{
-    HKEY m_key;
-public:
-    RegKey(HKEY key, TCHAR const* name, DWORD permissions):
-        m_key(OpenRegKey(key, name, 0, permissions))
-    {}
-    RegKey(RegKey&& other) noexcept:
-        m_key(other.m_key)
-    {
-        other.m_key = NULL;
-    }
-    ~RegKey()
-    {
-        if (m_key)
-            RegCloseKey(m_key);
-    }
-    operator HKEY() const
-    {
-        return m_key;
-    }
-};
 
 struct SessionData: private boost::noncopyable
 {
@@ -380,42 +350,27 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
     }
 }
 
-void DeleteRegistryKey(HKEY key, TCHAR const* name)
-{
-    switch (LONG const Result = RegDeleteValue(key, name); Result) {
-        case ERROR_SUCCESS:
-            BOOST_LOG_SEV(wdlog::get(), info) << format(TEXT("Deleted %1% key")) % name;
-            break;
-        case ERROR_FILE_NOT_FOUND:
-            BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("%1% key does not exist")) % name;
-            break;
-        default:
-            BOOST_LOG_SEV(wdlog::get(), error) << format(TEXT("Error deleting %1% key: %2%")) % name % Result;
-            break;
-    }
-}
-
 void RemoveLoginMessage(HKEY key)
 {
     BOOST_LOG_FUNC();
-    DeleteRegistryKey(key, TEXT("LegalNoticeText"));
-    DeleteRegistryKey(key, TEXT("LegalNoticeCaption"));
+    DeleteRegistryValue(key, TEXT("LegalNoticeText"));
+    DeleteRegistryValue(key, TEXT("LegalNoticeCaption"));
 }
 
 void RemoveAutosignonRestriction(HKEY key)
 {
     BOOST_LOG_FUNC();
-    DeleteRegistryKey(key, TEXT("DisableAutomaticRestartSignOn"));
-    DeleteRegistryKey(key, TEXT("DontDisplayLastUserName"));
+    DeleteRegistryValue(key, TEXT("DisableAutomaticRestartSignOn"));
+    DeleteRegistryValue(key, TEXT("DontDisplayLastUserName"));
 }
 
 void RemoveScreenSaverPolicy(HKEY key)
 {
     BOOST_LOG_FUNC();
-    DeleteRegistryKey(key, TEXT("ScreenSaveActive"));
-    DeleteRegistryKey(key, TEXT("ScreenSaverIsSecure"));
-    DeleteRegistryKey(key, TEXT("ScreenSaverTimeOut"));
-    DeleteRegistryKey(key, TEXT("ScrnSave.exe"));
+    DeleteRegistryValue(key, TEXT("ScreenSaveActive"));
+    DeleteRegistryValue(key, TEXT("ScreenSaverIsSecure"));
+    DeleteRegistryValue(key, TEXT("ScreenSaverTimeOut"));
+    DeleteRegistryValue(key, TEXT("ScrnSave.exe"));
 }
 
 void EstablishNotification(HKEY key, Event const& NotifyEvent)

@@ -94,6 +94,7 @@
   <ItemGroup>
     <ClCompile Include="errors.cpp" />
     <ClCompile Include="handles.cpp" />
+    <ClCompile Include="registry.cpp" />
     <ClCompile Include="SettingsWatchdog.cpp" />
     <ClCompile Include="logging.cpp" />
   </ItemGroup>
@@ -111,6 +112,7 @@
     <ClInclude Include="errors.hpp" />
     <ClInclude Include="logging.hpp" />
     <ClInclude Include="handles.hpp" />
+    <ClInclude Include="registry.hpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
