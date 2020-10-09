@@ -1,5 +1,7 @@
 #pragma once
 
+#include "logging.hpp"
+
 #include <map>
 #include <string>
 
@@ -10,6 +12,8 @@ extern std::map<DWORD, std::string> const control_names;
 extern std::map<DWORD, std::string> const session_change_codes;
 
 extern std::map<DWORD, std::string> const wait_results;
+
+extern std::map<severity_level, std::string> const severity_names;
 
 template <typename Map, typename T>
 typename Map::mapped_type get_with_default(Map const& map, typename Map::key_type const& key, T const& default_value)

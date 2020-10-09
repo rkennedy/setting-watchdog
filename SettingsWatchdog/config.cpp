@@ -6,7 +6,7 @@ std::filesystem::path Config::log_file() const
     return R"(C:\SettingsWatchdog.log)";
 }
 
-boost::log::trivial::severity_level Config::verbosity() const
+severity_level Config::verbosity() const
 {
-    return trace;
+    return severity_level::trace;
 }

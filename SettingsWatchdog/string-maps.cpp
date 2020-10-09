@@ -47,3 +47,13 @@ std::map<DWORD, std::string> const wait_results
     VALUE_NAME(WAIT_TIMEOUT),
     VALUE_NAME(WAIT_FAILED),
 };
+
+std::map<severity_level, std::string> const severity_names
+{
+    { severity_level::trace, "trace" },
+    { severity_level::debug, "debug" },
+    { severity_level::info, "info" },
+    { severity_level::warning, "warning" },
+    { severity_level::error, "error" },
+    { severity_level::fatal, "fatal" },
+};

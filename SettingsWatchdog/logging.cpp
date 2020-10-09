@@ -1,5 +1,6 @@
 #include "logging.hpp"
 #include "config.hpp"
+#include "string-maps.hpp"
 
 #include <codeanalysis/warnings.h>
 #pragma warning(push)
@@ -26,14 +27,15 @@ namespace bl = boost::log;
 
 BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(boost::winapi::GetCurrentProcessId()))
 BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCurrentThreadId()))
+BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
 
 static bl::formatter const g_formatter = (
     bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
     % bl::expressions::format_date_time<boost::posix_time::ptime>(
-        "TimeStamp", "%Y-%m-%d %H:%M:%S")
+        "TimeStamp", "%Y-%m-%d %H:%M:%S")  // RisK TODO Add milliseconds to output.
     % process_id
     % thread_id
-    % bl::trivial::severity
+    % severity
     % bl::expressions::format_named_scope(
         "Scope",
         bl::keywords::format = "%n",
@@ -42,7 +44,7 @@ static bl::formatter const g_formatter = (
     % bl::expressions::message
 );
 
-static bool severity_filter(bl::value_ref<bl::trivial::severity_level, bl::trivial::tag::severity> const& level)
+static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
 {
     Config const config;
     return level >= config.verbosity();
@@ -57,7 +59,7 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
     lg.add_attribute("ThreadId", bl::attributes::make_function(&boost::winapi::GetCurrentThreadId));
     lg.add_attribute("Scope", bl::attributes::named_scope());
 
-    auto const verbosity_filter = boost::phoenix::bind(&severity_filter, bl::trivial::severity.or_none());
+    auto const verbosity_filter = boost::phoenix::bind(&severity_filter, severity.or_none());
 
     auto const console = bl::add_console_log();
     console->set_formatter(g_formatter);
@@ -71,4 +73,9 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
     file->set_formatter(g_formatter);
     file->set_filter(verbosity_filter);
     return lg;
+}
+
+std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, severity_level sev)
+{
+    return os << get_with_default(severity_names, sev, "unknown");
 }
