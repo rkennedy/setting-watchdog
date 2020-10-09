@@ -8,6 +8,7 @@
 #include <sddl.h>
 
 #include <algorithm>
+#include <experimental/map>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -51,22 +52,40 @@ auto const SystemPolicyKey = TEXT(R"(SOFTWARE\Microsoft\Windows\CurrentVersion\P
 auto const DesktopPolicyKey = TEXT(R"(Control Panel\Desktop)");
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
-class AutoFreeWTSString: private boost::noncopyable
+template <typename T>
+class AutoFreeString: private boost::noncopyable
 {
 private:
     LPTSTR m_value = NULL;
+    AutoFreeString() = default;
+    friend T;
 public:
-    ~AutoFreeWTSString() {
-        BOOST_LOG_FUNC();
-        WTSFreeMemory(m_value);
+    ~AutoFreeString() {
+        T::free(m_value);
     }
     LPTSTR* operator&() {
-        BOOST_LOG_FUNC();
         return &m_value;
     }
     operator LPTSTR() const {
-        BOOST_LOG_FUNC();
         return m_value;
+    }
+};
+
+class WTSString: public AutoFreeString<WTSString>
+{
+public:
+    static void free(LPTSTR value)
+    {
+        WTSFreeMemory(value);
+    }
+};
+
+class LocalString: public AutoFreeString<LocalString>
+{
+public:
+    static void free(LPTSTR value)
+    {
+        LocalFree(value);
     }
 };
 
@@ -151,16 +170,12 @@ public:
     { }
     template <typename T> friend std::basic_ostream<T>& operator<<(std::basic_ostream<T>& os, SidFormatter const& sf) {
         BOOST_LOG_FUNC();
-        T* value;
+        LocalString value;
         if constexpr (std::is_same_v<T, char>) {
             WinCheck(ConvertSidToStringSidA(sf.m_sid, &value), "converting string sid");
         } else {
             WinCheck(ConvertSidToStringSidW(sf.m_sid, &value), "converting string sid");
         }
-        BOOST_SCOPE_EXIT(&value)
-        {
-            LocalFree(value);
-        } BOOST_SCOPE_EXIT_END;
         return os << value;
     }
 };
@@ -187,7 +202,7 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
         assert(context->sessions.find(dwSessionId) == context->sessions.end());
     }
     // Get session user name
-    AutoFreeWTSString name_buffer;
+    WTSString name_buffer;
     DWORD name_buffer_bytes;
     WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
     WDLOG(trace, "user for session is %1%") % static_cast<LPTSTR>(name_buffer);
@@ -348,16 +363,6 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
     return false;
 }
 
-template <typename M, typename F>
-void map_erase_if(M& m, F predicate)
-{
-    for (auto it = m.begin(); it != m.end(); )
-        if (predicate(*it))
-            m.erase(it++);
-        else
-            ++it;
-}
-
 void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
     BOOST_LOG_FUNC();
@@ -472,7 +477,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         WDLOG(trace, "Session list changed");
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
-                        map_erase_if(context.sessions, [](std::map<DWORD, SessionData>::value_type const& item) {
+                        std::experimental::erase_if(context.sessions, [](auto const& item) {
                             return !item.second.running;
                         });
                         boost::for_each(
