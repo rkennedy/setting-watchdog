@@ -537,16 +537,6 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
     return false;
 }
 
-template <typename M, typename F>
-void map_erase_if(M& m, F predicate)
-{
-    for (auto it = m.begin(); it != m.end(); )
-        if (predicate(*it))
-            m.erase(it++);
-        else
-            ++it;
-}
-
 void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
     BOOST_LOG_FUNC();
@@ -661,7 +651,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         BOOST_LOG_SEV(wdlog::get(), trace) << "Session list changed";
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
-                        map_erase_if(context.sessions, [](std::map<DWORD, SessionData>::value_type const& item) {
+                        std::experimental::erase_if(context.sessions, [](auto const& item) {
                             return !item.second.running;
                         });
                         boost::for_each(
