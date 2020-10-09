@@ -113,22 +113,40 @@ public:
     }
 };
 
-class AutoFreeWTSString: private boost::noncopyable
+template <typename T>
+class AutoFreeString: private boost::noncopyable
 {
 private:
     LPTSTR m_value = NULL;
+    AutoFreeString() = default;
+    friend T;
 public:
-    ~AutoFreeWTSString() {
-        BOOST_LOG_FUNC();
-        WTSFreeMemory(m_value);
+    ~AutoFreeString() {
+        T::free(m_value);
     }
     LPTSTR* operator&() {
-        BOOST_LOG_FUNC();
         return &m_value;
     }
     operator LPTSTR() const {
-        BOOST_LOG_FUNC();
         return m_value;
+    }
+};
+
+class WTSString: public AutoFreeString<WTSString>
+{
+public:
+    static void free(LPTSTR value)
+    {
+        WTSFreeMemory(value);
+    }
+};
+
+class LocalString: public AutoFreeString<LocalString>
+{
+public:
+    static void free(LPTSTR value)
+    {
+        LocalFree(value);
     }
 };
 
@@ -302,16 +320,6 @@ typename Map::mapped_type get_with_default(Map const& map, typename Map::key_typ
     return default_value;
 }
 
-BOOL Convert(PSID sid, char*& str)
-{
-    return ConvertSidToStringSidA(sid, &str);
-}
-
-BOOL Convert(PSID sid, wchar_t*& str)
-{
-    return ConvertSidToStringSidW(sid, &str);
-}
-
 class SidFormatter
 {
     PSID m_sid;
@@ -321,11 +329,13 @@ public:
     { }
     template <typename T> friend std::basic_ostream<T>& operator<<(std::basic_ostream<T>& os, SidFormatter const& sf) {
         BOOST_LOG_FUNC();
-        T* value;
-        WinCheck(Convert(sf.m_sid, value), "converting string sid");
-        os << value;
-        LocalFree(value);
-        return os;
+        LocalString value;
+        if constexpr (std::is_same_v<T, char>) {
+            WinCheck(ConvertSidToStringSidA(sf.m_sid, &value), "converting string sid");
+        } else {
+            WinCheck(ConvertSidToStringSidW(sf.m_sid, &value), "converting string sid");
+        }
+        return os << value;
     }
 };
 
@@ -351,7 +361,7 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
         assert(context->sessions.find(dwSessionId) == context->sessions.end());
     }
     // Get session user name
-    AutoFreeWTSString name_buffer;
+    WTSString name_buffer;
     DWORD name_buffer_bytes;
     WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
     BOOST_LOG_SEV(wdlog::get(), trace) << format(TEXT("user for session is %1%")) % static_cast<LPTSTR>(name_buffer);
