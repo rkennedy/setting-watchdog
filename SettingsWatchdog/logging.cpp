@@ -1,4 +1,5 @@
 #include "logging.hpp"
+#include "config.hpp"
 
 #include <codeanalysis/warnings.h>
 #pragma warning(push)
@@ -16,6 +17,7 @@
 #include <boost/log/support/date_time.hpp>
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/utility/setup/file.hpp>
+#include <boost/phoenix/bind/bind_function.hpp>
 #include <boost/phoenix/operator/arithmetic.hpp>
 
 #pragma warning(pop)
@@ -25,32 +27,48 @@ namespace bl = boost::log;
 BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(boost::winapi::GetCurrentProcessId()))
 BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCurrentThreadId()))
 
+static bl::formatter const g_formatter = (
+    bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
+    % bl::expressions::format_date_time<boost::posix_time::ptime>(
+        "TimeStamp", "%Y-%m-%d %H:%M:%S")
+    % process_id
+    % thread_id
+    % bl::trivial::severity
+    % bl::expressions::format_named_scope(
+        "Scope",
+        bl::keywords::format = "%n",
+        bl::keywords::incomplete_marker = "",
+        bl::keywords::depth = 1)
+    % bl::expressions::message
+);
+
+static bool severity_filter(bl::value_ref<bl::trivial::severity_level, bl::trivial::tag::severity> const& level)
+{
+    Config const config;
+    return level >= config.verbosity();
+}
+
 BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 {
+    Config const config;
     logger_type lg;
     lg.add_attribute("TimeStamp", bl::attributes::local_clock());
     lg.add_attribute("ProcessId", bl::attributes::make_constant(boost::winapi::GetCurrentProcessId()));
     lg.add_attribute("ThreadId", bl::attributes::make_function(&boost::winapi::GetCurrentThreadId));
     lg.add_attribute("Scope", bl::attributes::named_scope());
-    bl::formatter formatter = (
-        bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
-        % bl::expressions::format_date_time<boost::posix_time::ptime>(
-            "TimeStamp", "%Y-%m-%d %H:%M:%S")
-        % process_id
-        % thread_id
-        % bl::trivial::severity
-        % bl::expressions::format_named_scope(
-            "Scope",
-            bl::keywords::format = "%n",
-            bl::keywords::incomplete_marker = "",
-            bl::keywords::depth = 1)
-        % bl::expressions::message
-    );
-    bl::add_console_log()->set_formatter(formatter);
-    bl::add_file_log(
-        bl::keywords::file_name = R"(C:\SettingsWatchdog.log)",
+
+    auto const verbosity_filter = boost::phoenix::bind(&severity_filter, bl::trivial::severity.or_none());
+
+    auto const console = bl::add_console_log();
+    console->set_formatter(g_formatter);
+    console->set_filter(verbosity_filter);
+
+    auto const file = bl::add_file_log(
+        bl::keywords::file_name = config.log_file().native(),
         bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
         bl::keywords::auto_flush = true
-    )->set_formatter(formatter);
+    );
+    file->set_formatter(g_formatter);
+    file->set_filter(verbosity_filter);
     return lg;
 }

@@ -92,6 +92,7 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="config.cpp" />
     <ClCompile Include="errors.cpp" />
     <ClCompile Include="handles.cpp" />
     <ClCompile Include="registry.cpp" />
@@ -110,6 +111,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.hpp" />
     <ClInclude Include="errors.hpp" />
     <ClInclude Include="logging.hpp" />
     <ClInclude Include="handles.hpp" />
