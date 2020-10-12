@@ -6,6 +6,9 @@ on:
 jobs:
   build:
     runs-on: windows-2019
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
+
     steps:
     - name: Check out code
       uses: actions/checkout@master
@@ -13,16 +16,16 @@ jobs:
     - name: Add MSBuild
       uses: microsoft/setup-msbuild@v1.0.1
 
-    - name: Set up package cache
-      uses: actions/cache@v2
-      id: cache
+    - name: Install & build vcpkg packages
+      uses: lukka/run-vcpkg@v4
+      id: vcpkg
       with:
-        path: packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('.github/workflows/build.yaml', '**/packages.config') }}
+        vcpkgGitCommitId: 3714469e0e928b06e20dde2473b90bac9c505368
+        vcpkgArguments: '@${{ github.workspace }}/vcpkg-response.txt'
+        appendedCacheKey: vcpkg-${{ hashFiles('${{ github.workspace }}/vcpkg-response.txt') }}
 
-    - name: Get packages
-      if: "!steps.cache.outputs.cache-hit"
-      run: nuget restore SettingsWatchdog.sln
+    - name: Integrate vcpkg
+      run: vcpkg integrate install
 
     - name: Build
       run: msbuild -p:Configuration=Release SettingsWatchdog.sln

@@ -54,9 +54,6 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="logging.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
