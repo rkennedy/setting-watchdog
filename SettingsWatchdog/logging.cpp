@@ -77,5 +77,5 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 
 std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, severity_level sev)
 {
-    return os << get_with_default(severity_names, sev, "unknown");
+    return os << get(severity_names, sev).value_or("unknown");
 }
