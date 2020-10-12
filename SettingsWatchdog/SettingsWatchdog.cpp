@@ -34,7 +34,6 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
-#include <boost/scope_exit.hpp>
 
 #pragma warning(pop)
 
