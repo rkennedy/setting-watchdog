@@ -251,7 +251,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
     BOOST_LOG_FUNC();
     auto const context = static_cast<ServiceContext<SettingsWatchdogContext>*>(lpContext);
 
-    WDLOG(trace, "Service control %1% (%2%)") % dwControl % get_with_default(control_names, dwControl, "unknown").c_str();
+    WDLOG(trace, "Service control %1% (%2%)") % dwControl % get(control_names, dwControl).value_or("unknown").c_str();
     switch (dwControl) {
         case SERVICE_CONTROL_INTERROGATE:
             return NO_ERROR;
@@ -271,7 +271,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         }
         case SERVICE_CONTROL_SESSIONCHANGE:
         {
-            WDLOG(trace, "session-change code %1%") % get_with_default(session_change_codes, dwEventType, std::to_string(dwEventType)).c_str();
+            WDLOG(trace, "session-change code %1%") % get(session_change_codes, dwEventType).value_or(std::to_string(dwEventType)).c_str();
             auto const notification = static_cast<WTSSESSION_NOTIFICATION const*>(lpEventData);
             if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) {
                 // The OS is sending the wrong structure size, so let's pretend
@@ -452,7 +452,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     boost::numeric_cast<DWORD>(wait_handles.size()),
                     wait_handles.data(), false, INFINITE);
                 std::error_code ec(GetLastError(), std::system_category());
-                WDLOG(trace, "Wait returned %1%") % get_with_default(wait_results, WaitResult, std::to_string(WaitResult)).c_str();
+                WDLOG(trace, "Wait returned %1%") % get(wait_results, WaitResult).value_or(std::to_string(WaitResult)).c_str();
                 switch (WaitResult) {
                     case WAIT_OBJECT_0:
                     {
