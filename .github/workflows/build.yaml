@@ -11,7 +11,9 @@ jobs:
 
     steps:
     - name: Check out code
-      uses: actions/checkout@master
+      uses: actions/checkout@v2
+      with:
+        submodules: true
 
     - name: Add MSBuild
       uses: microsoft/setup-msbuild@v1.0.1
@@ -20,7 +22,6 @@ jobs:
       uses: lukka/run-vcpkg@v4
       id: vcpkg
       with:
-        vcpkgGitCommitId: 3714469e0e928b06e20dde2473b90bac9c505368
         vcpkgArguments: '@${{ github.workspace }}/vcpkg-response.txt'
         appendedCacheKey: vcpkg-${{ hashFiles('${{ github.workspace }}/vcpkg-response.txt') }}
 
