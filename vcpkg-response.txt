@@ -9,3 +9,4 @@ boost-numeric-conversion
 boost-phoenix
 boost-program-options
 boost-range
+boost-winapi
