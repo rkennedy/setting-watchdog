@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 #include <windows.h>
 
 class BaseServiceHandle
@@ -24,10 +26,10 @@ public:
 class ServiceHandle: public BaseServiceHandle
 {
 public:
-    ServiceHandle(ServiceManagerHandle const& manager, TCHAR const* name,
-                  TCHAR const* display_name, DWORD type, DWORD start,
-                  TCHAR const* path);
-    ServiceHandle(ServiceManagerHandle const& manager, TCHAR const* name,
+    ServiceHandle(ServiceManagerHandle const& manager, char const* name,
+                  char const* display_name, DWORD type, DWORD start,
+                  std::filesystem::path const& path);
+    ServiceHandle(ServiceManagerHandle const& manager, char const* name,
                   DWORD access);
 };
 

@@ -2,7 +2,7 @@
 
 #include <windows.h>
 
-HKEY OpenRegKey(HKEY hKey, LPCTSTR lpSubKey, DWORD ulOptions, REGSAM samDesired);
+HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM samDesired);
 
 class RegKey
 {
@@ -11,10 +11,10 @@ class RegKey
     RegKey(RegKey const&) = delete;
     RegKey& operator=(RegKey const&) = delete;
 public:
-    RegKey(HKEY key, TCHAR const* name, DWORD permissions);
+    RegKey(HKEY key, char const* name, DWORD permissions);
     RegKey(RegKey&& other) noexcept;
     ~RegKey();
     operator HKEY() const;
 };
 
-void DeleteRegistryValue(HKEY key, TCHAR const* name);
+void DeleteRegistryValue(HKEY key, char const* name);

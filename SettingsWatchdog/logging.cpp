@@ -18,6 +18,7 @@
 #include <boost/log/support/date_time.hpp>
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/utility/setup/file.hpp>
+#include <boost/nowide/iostream.hpp>
 #include <boost/phoenix/bind/bind_function.hpp>
 #include <boost/phoenix/operator/arithmetic.hpp>
 
@@ -61,17 +62,18 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 
     auto const verbosity_filter = boost::phoenix::bind(&severity_filter, severity.or_none());
 
-    auto const console = bl::add_console_log();
-    console->set_formatter(g_formatter);
-    console->set_filter(verbosity_filter);
-
+    auto const console = bl::add_console_log(
+        boost::nowide::clog,
+        bl::keywords::filter = verbosity_filter,
+        bl::keywords::format = g_formatter
+    );
     auto const file = bl::add_file_log(
         bl::keywords::file_name = config.log_file().native(),
         bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
-        bl::keywords::auto_flush = true
+        bl::keywords::auto_flush = true,
+        bl::keywords::filter = verbosity_filter,
+        bl::keywords::format = g_formatter
     );
-    file->set_formatter(g_formatter);
-    file->set_filter(verbosity_filter);
     return lg;
 }
 

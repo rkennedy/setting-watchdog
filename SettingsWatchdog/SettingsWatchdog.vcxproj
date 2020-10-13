@@ -64,7 +64,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>advapi32.lib;wtsapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;wtsapi32.lib;shell32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -125,7 +125,7 @@
     <PropertyGroup>
       <CommitCode><![CDATA[
 #include <windows.h>
-inline auto git_commit = TEXT(R"($(GitCommit))")%3b
+inline auto git_commit = R"($(GitCommit))"%3b
 ]]></CommitCode>
     </PropertyGroup>
     <WriteLinesToFile

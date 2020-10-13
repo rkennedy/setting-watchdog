@@ -4,6 +4,7 @@ boost-date-time
 boost-dll
 boost-format
 boost-log
+boost-nowide
 boost-numeric-conversion
 boost-phoenix
 boost-program-options
