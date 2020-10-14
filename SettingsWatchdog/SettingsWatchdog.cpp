@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <experimental/map>
 #include <functional>
-#include <iostream>
 #include <map>
 #include <mutex>
 #include <string>
@@ -27,6 +26,9 @@
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/format.hpp>
 #include <boost/log/attributes/named_scope.hpp>
+#include <boost/nowide/args.hpp>
+#include <boost/nowide/convert.hpp>
+#include <boost/nowide/iostream.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/range/adaptor/filtered.hpp>
@@ -41,39 +43,35 @@
 
 namespace po = boost::program_options;
 
-#if UNICODE
-using format = boost::wformat;
-#else
-using format = boost::format;
-#endif
-
-auto const SystemPolicyKey = TEXT(R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)");
-auto const DesktopPolicyKey = TEXT(R"(Control Panel\Desktop)");
+auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)";
+auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
 template <typename T>
 class AutoFreeString: private boost::noncopyable
 {
 private:
-    LPTSTR m_value = NULL;
+    wchar_t* m_value = NULL;
+    std::string mutable m_narrow_value;
     AutoFreeString() = default;
     friend T;
 public:
     ~AutoFreeString() {
         T::free(m_value);
     }
-    LPTSTR* operator&() {
+    wchar_t** operator&() {
         return &m_value;
     }
-    operator LPTSTR() const {
-        return m_value;
+    operator char const*() const {
+        m_narrow_value = boost::nowide::narrow(m_value);
+        return m_narrow_value.c_str();
     }
 };
 
 class WTSString: public AutoFreeString<WTSString>
 {
 public:
-    static void free(LPTSTR value)
+    static void free(wchar_t* value)
     {
         WTSFreeMemory(value);
     }
@@ -82,7 +80,7 @@ public:
 class LocalString: public AutoFreeString<LocalString>
 {
 public:
-    static void free(LPTSTR value)
+    static void free(wchar_t* value)
     {
         LocalFree(value);
     }
@@ -93,16 +91,17 @@ void InstallService()
     BOOST_LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
     auto const self_path = boost::dll::program_location();
-    WDLOG(trace, "Current file name is %1%") % self_path.native();
+    WDLOG(trace, "Current file name is %1%") % boost::nowide::narrow(self_path.native());
 
-    ServiceHandle const service(handle, TEXT("SettingsWatchdog"),
-                                TEXT("Settings Watchdog"), ServiceType,
+    ServiceHandle const service(handle, "SettingsWatchdog",
+                                "Settings Watchdog", ServiceType,
                                 SERVICE_AUTO_START, self_path.c_str());
     WDLOG(info, "Service created");
 
-    SERVICE_DESCRIPTION description = { const_cast<LPTSTR>(TEXT("Watch registry settings and set "
-        "them back to desired values")) };
-    WinCheck(ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &description), "configuring service");
+    std::wstring const description_string = boost::nowide::widen("Watch registry settings and set "
+        "them back to desired values");
+    SERVICE_DESCRIPTIONW description = { const_cast<wchar_t*>(description_string.c_str()) };
+    WinCheck(ChangeServiceConfig2W(service, SERVICE_CONFIG_DESCRIPTION, &description), "configuring service");
     WDLOG(trace, "Service configured");
 }
 
@@ -110,7 +109,7 @@ void UninstallService()
 {
     BOOST_LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CONNECT);
-    ServiceHandle const service(handle, TEXT("SettingsWatchdog"), DELETE);
+    ServiceHandle const service(handle, "SettingsWatchdog", DELETE);
     WDLOG(trace, "Service opened");
     WinCheck(DeleteService(service), "deleting service");
     WDLOG(info, "Service deleted");
@@ -122,8 +121,8 @@ struct SessionData: private boost::noncopyable
     bool running;
     Event notification;
     RegKey const key;
-    std::basic_string<TCHAR> const username;
-    SessionData(RegKey&& key, std::basic_string<TCHAR> const& username):
+    std::string const username;
+    SessionData(RegKey&& key, std::string const& username):
         new_(true),
         running(true),
         notification(),
@@ -136,9 +135,9 @@ template <typename T>
 class ServiceContext: public T
 {
 public:
-    ServiceContext(LPCTSTR lpServiceName, LPHANDLER_FUNCTION_EX lpHandlerProc):
+    ServiceContext(char const* lpServiceName, LPHANDLER_FUNCTION_EX lpHandlerProc):
         T(),
-        StatusHandle(WinCheck(RegisterServiceCtrlHandlerEx(lpServiceName, lpHandlerProc, this),
+        StatusHandle(WinCheck(RegisterServiceCtrlHandlerExW(boost::nowide::widen(lpServiceName).c_str(), lpHandlerProc, this),
                               "registering service handler"))
     {}
 
@@ -167,14 +166,10 @@ public:
     SidFormatter(PSID sid):
         m_sid(sid)
     { }
-    template <typename T> friend std::basic_ostream<T>& operator<<(std::basic_ostream<T>& os, SidFormatter const& sf) {
+    friend std::ostream& operator<<(std::ostream& os, SidFormatter const& sf) {
         BOOST_LOG_FUNC();
         LocalString value;
-        if constexpr (std::is_same_v<T, char>) {
-            WinCheck(ConvertSidToStringSidA(sf.m_sid, &value), "converting string sid");
-        } else {
-            WinCheck(ConvertSidToStringSidW(sf.m_sid, &value), "converting string sid");
-        }
+        WinCheck(ConvertSidToStringSidW(sf.m_sid, &value), "converting string sid");
         return os << value;
     }
 };
@@ -184,11 +179,11 @@ struct logging_lock_guard
     std::string label;
     std::lock_guard<std::mutex> guard;
     logging_lock_guard(std::mutex& m, std::string const& label):
-        label(([](std::string const& l) { WDLOG(debug, "locking %1%") % l.c_str(); return l; })(label)),
+        label(([](std::string const& l) { WDLOG(debug, "locking %1%") % l; return l; })(label)),
         guard(m)
     { }
     ~logging_lock_guard() {
-        WDLOG(debug, "unlocked %1%") % label.c_str();
+        WDLOG(debug, "unlocked %1%") % label;
     }
 };
 
@@ -203,8 +198,8 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
     // Get session user name
     WTSString name_buffer;
     DWORD name_buffer_bytes;
-    WinCheck(WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
-    WDLOG(trace, "user for session is %1%") % static_cast<LPTSTR>(name_buffer);
+    WinCheck(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer, &name_buffer_bytes), "getting session user name");
+    WDLOG(trace, "user for session is %1%") % name_buffer;
 
     AutoCloseHandle session_token;
     try {
@@ -228,15 +223,15 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
 
     SidFormatter const sid(token_user->User.Sid);
     try {
-        boost::basic_format<TCHAR> subkey(TEXT("%1%\\%2%"));
-        WDLOG(trace, "session sid %1% (%2%)") % sid % static_cast<LPTSTR>(name_buffer);
+        boost::format subkey(R"(%1%\%2%)");
+        WDLOG(trace, "session sid %1% (%2%)") % sid % name_buffer;
         RegKey key(HKEY_USERS, (subkey % sid % DesktopPolicyKey).str().c_str(), KEY_NOTIFY | KEY_SET_VALUE);
 
         logging_lock_guard session_guard(context->session_mutex, "emplacement");
         context->sessions.emplace(
             std::piecewise_construct,
             std::forward_as_tuple(dwSessionId),
-            std::forward_as_tuple(std::move(key), static_cast<LPTSTR>(name_buffer))
+            std::forward_as_tuple(std::move(key), std::string(name_buffer))
             );
         SetEvent(context->SessionChange);
     } catch (std::system_error const&) {
@@ -250,7 +245,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
     BOOST_LOG_FUNC();
     auto const context = static_cast<ServiceContext<SettingsWatchdogContext>*>(lpContext);
 
-    WDLOG(trace, "Service control %1% (%2%)") % dwControl % get(control_names, dwControl).value_or("unknown").c_str();
+    WDLOG(trace, "Service control %1% (%2%)") % dwControl % get(control_names, dwControl).value_or("unknown");
     switch (dwControl) {
         case SERVICE_CONTROL_INTERROGATE:
             return NO_ERROR;
@@ -270,7 +265,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
         }
         case SERVICE_CONTROL_SESSIONCHANGE:
         {
-            WDLOG(trace, "session-change code %1%") % get(session_change_codes, dwEventType).value_or(std::to_string(dwEventType)).c_str();
+            WDLOG(trace, "session-change code %1%") % get(session_change_codes, dwEventType).value_or(std::to_string(dwEventType));
             auto const notification = static_cast<WTSSESSION_NOTIFICATION const*>(lpEventData);
             if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) {
                 // The OS is sending the wrong structure size, so let's pretend
@@ -309,24 +304,24 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType,
 void RemoveLoginMessage(HKEY key)
 {
     BOOST_LOG_FUNC();
-    DeleteRegistryValue(key, TEXT("LegalNoticeText"));
-    DeleteRegistryValue(key, TEXT("LegalNoticeCaption"));
+    DeleteRegistryValue(key, "LegalNoticeText");
+    DeleteRegistryValue(key, "LegalNoticeCaption");
 }
 
 void RemoveAutosignonRestriction(HKEY key)
 {
     BOOST_LOG_FUNC();
-    DeleteRegistryValue(key, TEXT("DisableAutomaticRestartSignOn"));
-    DeleteRegistryValue(key, TEXT("DontDisplayLastUserName"));
+    DeleteRegistryValue(key, "DisableAutomaticRestartSignOn");
+    DeleteRegistryValue(key, "DontDisplayLastUserName");
 }
 
 void RemoveScreenSaverPolicy(HKEY key)
 {
     BOOST_LOG_FUNC();
-    DeleteRegistryValue(key, TEXT("ScreenSaveActive"));
-    DeleteRegistryValue(key, TEXT("ScreenSaverIsSecure"));
-    DeleteRegistryValue(key, TEXT("ScreenSaverTimeOut"));
-    DeleteRegistryValue(key, TEXT("ScrnSave.exe"));
+    DeleteRegistryValue(key, "ScreenSaveActive");
+    DeleteRegistryValue(key, "ScreenSaverIsSecure");
+    DeleteRegistryValue(key, "ScreenSaverTimeOut");
+    DeleteRegistryValue(key, "ScrnSave.exe");
 }
 
 void EstablishNotification(HKEY key, Event const& NotifyEvent)
@@ -358,7 +353,7 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
 {
     if (check_range(min, max, value))
         return true;
-    WDLOG(warning, "%1% %2% not in range [%3%,%4%)") % label.c_str() % value % min % max;
+    WDLOG(warning, "%1% %2% not in range [%3%,%4%)") % label % value % min % max;
     return false;
 }
 
@@ -367,7 +362,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
     BOOST_LOG_FUNC();
     try {
         WDLOG(debug, "Establishing service context");
-        ServiceContext<SettingsWatchdogContext> context(TEXT("SettingsWatchdog"), ServiceHandler);
+        ServiceContext<SettingsWatchdogContext> context("SettingsWatchdog", ServiceHandler);
         try {
             DWORD starting_checkpoint = 0;
             SERVICE_STATUS start_pending = { ServiceType, SERVICE_START_PENDING, 0,
@@ -451,7 +446,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     boost::numeric_cast<DWORD>(wait_handles.size()),
                     wait_handles.data(), false, INFINITE);
                 std::error_code ec(GetLastError(), std::system_category());
-                WDLOG(trace, "Wait returned %1%") % get(wait_results, WaitResult).value_or(std::to_string(WaitResult)).c_str();
+                WDLOG(trace, "Wait returned %1%") % get(wait_results, WaitResult).value_or(std::to_string(WaitResult));
                 switch (WaitResult) {
                     case WAIT_OBJECT_0:
                     {
@@ -539,7 +534,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             throw;
         }
     } catch (std::system_error const& ex) {
-        WDLOG(error, "Error (%1%) %2%") % ex.code() % boost::algorithm::trim_copy(std::string(ex.what())).c_str();
+        WDLOG(error, "Error (%1%) %2%") % ex.code() % boost::algorithm::trim_copy(std::string(ex.what()));
         return;
     }
 }
@@ -548,7 +543,9 @@ int main(int argc, char* argv[])
 {
     BOOST_LOG_FUNC();
     try {
-        WDLOG(info, "Running %1%") % boost::dll::program_location().native();
+        boost::nowide::args a(argc, argv);
+
+        WDLOG(info, "Running %1%") % boost::nowide::narrow(boost::dll::program_location().native());
         WDLOG(trace, "Commit %1%") % git_commit;
 
         po::options_description desc("Allowed options");
@@ -562,7 +559,7 @@ int main(int argc, char* argv[])
         po::notify(vm);
 
         if (vm.count("help")) {
-            std::cout << desc << std::endl;
+            boost::nowide::cout << desc << std::endl;
             return EXIT_SUCCESS;
         }
         if (vm.count("install")) {
@@ -574,18 +571,19 @@ int main(int argc, char* argv[])
             return EXIT_SUCCESS;
         }
 
-        SERVICE_TABLE_ENTRY ServiceTable[] = {
-            { const_cast<LPTSTR>(TEXT("SettingsWatchdog")), SettingsWatchdogMain },
+        std::wstring const service_name = boost::nowide::widen("SettingsWatchdog");
+        SERVICE_TABLE_ENTRYW ServiceTable[] = {
+            { const_cast<wchar_t*>(service_name.c_str()), SettingsWatchdogMain },
             { nullptr, nullptr }
         };
 
         WDLOG(debug, "Starting service dispatcher");
-        WinCheck(StartServiceCtrlDispatcher(ServiceTable),
+        WinCheck(StartServiceCtrlDispatcherW(ServiceTable),
                  "starting service dispatcher");
         WDLOG(debug, "Exiting");
         return EXIT_SUCCESS;
     } catch (std::system_error const& ex) {
-        WDLOG(error, "Error (%1%) %2%") % ex.code() % boost::algorithm::trim_copy(std::string(ex.what())).c_str();
+        WDLOG(error, "Error (%1%) %2%") % ex.code() % boost::algorithm::trim_copy(std::string(ex.what()));
         return EXIT_FAILURE;
     }
 }

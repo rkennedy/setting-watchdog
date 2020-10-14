@@ -6,6 +6,7 @@
 #pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 
 #include <boost/log/attributes/named_scope.hpp>
+#include <boost/nowide/convert.hpp>
 
 #pragma warning(pop)
 
@@ -29,19 +30,19 @@ ServiceManagerHandle::ServiceManagerHandle(DWORD permissions):
                       "opening service control manager")
 {}
 
-ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, TCHAR const* name,
-                             TCHAR const* display_name, DWORD type, DWORD start,
-                             TCHAR const* path) :
-    BaseServiceHandle(CreateService(manager, name, display_name,
+ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, char const* name,
+                             char const* display_name, DWORD type, DWORD start,
+                             std::filesystem::path const& path) :
+    BaseServiceHandle(CreateServiceW(manager, boost::nowide::widen(name).c_str(), boost::nowide::widen(display_name).c_str(),
                                     SERVICE_ALL_ACCESS, type, start,
-                                    SERVICE_ERROR_NORMAL, path, nullptr,
+                                    SERVICE_ERROR_NORMAL, path.c_str(), nullptr,
                                     nullptr, nullptr, nullptr, nullptr),
                       "creating service")
 {}
 
-ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, TCHAR const* name,
+ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, char const* name,
                              DWORD access):
-    BaseServiceHandle(OpenService(manager, name, access), "opening service")
+    BaseServiceHandle(OpenServiceW(manager, boost::nowide::widen(name).c_str(), access), "opening service")
 {}
 
 AutoCloseHandle::AutoCloseHandle(HANDLE handle) :
