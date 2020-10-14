@@ -21,6 +21,9 @@
 #include <boost/nowide/iostream.hpp>
 #include <boost/phoenix/bind/bind_function.hpp>
 #include <boost/phoenix/operator/arithmetic.hpp>
+#include <boost/program_options/errors.hpp>
+#include <boost/program_options/value_semantic.hpp>
+#include <boost/range/algorithm/find_if.hpp>
 
 #pragma warning(pop)
 
@@ -77,7 +80,21 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
     return lg;
 }
 
-std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, severity_level sev)
+std::ostream& operator<<(std::ostream& os, severity_level sev)
 {
     return os << get(severity_names, sev).value_or("unknown");
+}
+
+void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int)
+{
+    namespace po = boost::program_options;
+
+    po::validators::check_first_occurrence(v);
+    std::string const& s = po::validators::get_single_string(values);
+
+    if (auto const it = boost::find_if(severity_names, [&s](auto p) { return p.second == s; }); it != severity_names.cend()) {
+        v = it->first;
+        return;
+    }
+    throw po::validation_error(po::validation_error::invalid_option_value);
 }

@@ -1,3 +1,4 @@
+#include "config.hpp"
 #include "string-maps.hpp"
 #include "registry.hpp"
 #include "logging.hpp"
@@ -545,14 +546,13 @@ int main(int argc, char* argv[])
     try {
         boost::nowide::args a(argc, argv);
 
-        WDLOG(info, "Running %1%") % boost::nowide::narrow(boost::dll::program_location().native());
-        WDLOG(trace, "Commit %1%") % git_commit;
-
         po::options_description desc("Allowed options");
         desc.add_options()
             ("help,h", "This help message")
             ("install,i", "Install the service")
             ("uninstall,u", "Uninstall the service")
+            ("log-location,l", po::value<std::filesystem::path>(), "Set the location of the log file")
+            ("verbose,v", po::value<severity_level>(), "Set the verbosity level")
             ;
         po::variables_map vm;
         po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -562,6 +562,16 @@ int main(int argc, char* argv[])
             boost::nowide::cout << desc << std::endl;
             return EXIT_SUCCESS;
         }
+        Config config;
+        if (vm.count("log-location")) {
+            config.log_file(vm.at("log-location").as<std::filesystem::path>());
+        }
+        if (vm.count("verbose")) {
+            config.verbosity(vm.at("verbose").as<severity_level>());
+        }
+        WDLOG(info, "Running %1%") % boost::nowide::narrow(boost::dll::program_location().native());
+        WDLOG(trace, "Commit %1%") % git_commit;
+
         if (vm.count("install")) {
             InstallService();
             return EXIT_SUCCESS;
