@@ -9,6 +9,7 @@
 #include <sddl.h>
 
 #include <algorithm>
+#include <exception>
 #include <experimental/map>
 #include <functional>
 #include <map>
@@ -594,6 +595,9 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     } catch (std::system_error const& ex) {
         WDLOG(error, "Error (%1%) %2%") % ex.code() % boost::algorithm::trim_copy(std::string(ex.what()));
+        return EXIT_FAILURE;
+    } catch (std::exception const& ex) {
+        WDLOG(error, "Error: %1%") % boost::algorithm::trim_copy(std::string(ex.what()));
         return EXIT_FAILURE;
     }
 }
