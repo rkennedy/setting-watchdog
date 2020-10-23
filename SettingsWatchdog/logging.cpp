@@ -13,7 +13,9 @@
 #include <boost/log/attributes/named_scope.hpp>
 #include <boost/log/expressions/formatters/date_time.hpp>
 #include <boost/log/expressions/formatters/format.hpp>
+#include <boost/log/expressions/formatters/max_size_decorator.hpp>
 #include <boost/log/expressions/formatters/named_scope.hpp>
+#include <boost/log/expressions/formatters/stream.hpp>
 #include <boost/log/expressions/keyword.hpp>
 #include <boost/log/support/date_time.hpp>
 #include <boost/log/utility/setup/console.hpp>
@@ -31,9 +33,9 @@ BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCu
 BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
 
 static bl::formatter const g_formatter = (
-    bl::expressions::format("%1% [%2%:%3%] <%4%> %5%: %6%")
+    bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
     % bl::expressions::format_date_time<boost::posix_time::ptime>(
-        "TimeStamp", "%Y-%m-%d %H:%M:%S")  // RisK TODO Add milliseconds to output.
+        "TimeStamp", "%Y-%m-%d %H:%M:%S")
     % process_id
     % thread_id
     % severity
@@ -43,6 +45,11 @@ static bl::formatter const g_formatter = (
         bl::keywords::incomplete_marker = "",
         bl::keywords::depth = 1)
     % bl::expressions::message
+    % bl::expressions::max_size_decor(3, "")[
+        // %f gives six digits of precision. We want three.
+        bl::expressions::stream << bl::expressions::format_date_time<boost::posix_time::ptime>(
+            "TimeStamp", "%f")
+    ]
 );
 
 static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
