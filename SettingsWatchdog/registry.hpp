@@ -2,8 +2,6 @@
 
 #include <windows.h>
 
-HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM samDesired);
-
 class RegKey
 {
     HKEY m_key;
