@@ -50,13 +50,11 @@ static bl::formatter const g_formatter = (
 
 static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
 {
-    Config const config;
-    return level >= config.verbosity();
+    return level >= config::verbosity.get();
 }
 
 BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 {
-    Config const config;
     logger_type lg;
     lg.add_attribute("TimeStamp", bl::attributes::local_clock());
     lg.add_attribute("ProcessId", bl::attributes::make_constant(boost::winapi::GetCurrentProcessId()));
@@ -71,7 +69,7 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
         bl::keywords::format = g_formatter
     );
     auto const file = bl::add_file_log(
-        bl::keywords::file_name = config.log_file().native(),
+        bl::keywords::file_name = config::log_file.get().native(),
         bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
         bl::keywords::auto_flush = true,
         bl::keywords::filter = verbosity_filter,

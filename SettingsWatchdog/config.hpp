@@ -1,15 +1,21 @@
 #pragma once
 
+#include "registry.hpp"
 #include "logging.hpp"
 
 #include <filesystem>
+#include <string>
 
-class Config
+namespace registry {
+    template <>
+    struct registry_traits<std::filesystem::path> {
+        static std::wstring convert(std::filesystem::path const& p) {
+            return p.native();
+        }
+    };
+}
+namespace config
 {
-public:
-    std::filesystem::path log_file() const;
-    Config& log_file(std::filesystem::path const&);
-
-    severity_level verbosity() const;
-    Config& verbosity(severity_level const&);
-};
+    extern registry::value<std::filesystem::path> log_file;
+    extern registry::value<severity_level> verbosity;
+}

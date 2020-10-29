@@ -563,12 +563,11 @@ int main(int argc, char* argv[])
             boost::nowide::cout << desc << std::endl;
             return EXIT_SUCCESS;
         }
-        Config config;
         if (vm.count("log-location")) {
-            config.log_file(vm.at("log-location").as<std::filesystem::path>());
+            config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
         }
         if (vm.count("verbose")) {
-            config.verbosity(vm.at("verbose").as<severity_level>());
+            config::verbosity.set(vm.at("verbose").as<severity_level>());
         }
         WDLOG(info, "Running %1%") % boost::nowide::narrow(boost::dll::program_location().native());
         WDLOG(trace, "Commit %1%") % git_commit;

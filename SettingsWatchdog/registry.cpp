@@ -6,7 +6,6 @@
 #pragma warning(push)
 #pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 
-#include <boost/log/sources/severity_feature.hpp>
 #include <boost/nowide/convert.hpp>
 
 #pragma warning(pop)
@@ -51,33 +50,5 @@ void DeleteRegistryValue(HKEY key, char const* name)
         default:
             WDLOG(error, "Error deleting %1% value: %2%") % name % result;
             break;
-    }
-}
-
-namespace registry
-{
-    std::string read_string(HKEY key, std::string const& subkey, std::string const& value_name)
-    {
-        DWORD type;
-        DWORD data_size = 0;
-        RegCheck(RegGetValueW(key, boost::nowide::widen(subkey).c_str(), boost::nowide::widen(value_name).c_str(), RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, &type, nullptr, &data_size), "checking value size");
-        switch (type) {
-        case REG_EXPAND_SZ:
-        case REG_SZ: {
-            std::vector<char> buffer(data_size);
-            RegCheck(RegGetValueW(key, boost::nowide::widen(subkey).c_str(), boost::nowide::widen(value_name).c_str(), RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, nullptr, buffer.data(), &data_size), "reading string value");
-            return boost::nowide::narrow(reinterpret_cast<wchar_t const*>(buffer.data()), data_size - sizeof(wchar_t));
-        }
-        default:
-            throw std::domain_error(boost::str(boost::format("unsupported registry type %1%") % ::get(registry_types, type).value_or(std::to_string(type))));
-        }
-    }
-
-    void write_string(HKEY key, std::string const& subkey, std::string const& value_name, std::string const& value) {
-        write_string(key, subkey, value_name, boost::nowide::widen(value));
-    }
-
-    void write_string(HKEY key, std::string const& subkey, std::string const& value_name, std::wstring const& value) {
-        RegCheck(RegSetKeyValueW(key, boost::nowide::widen(subkey).c_str(), boost::nowide::widen(value_name).c_str(), REG_SZ, reinterpret_cast<BYTE const*>(value.data()), boost::numeric_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))), "storing string value");
     }
 }
