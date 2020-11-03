@@ -15,4 +15,4 @@ T&& WinCheck(T&& arg, char const* message)
     return std::move(arg);
 }
 
-LONG RegCheck(LONG arg, char const* message);
+LSTATUS RegCheck(LSTATUS arg, char const* message);

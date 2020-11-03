@@ -48,6 +48,21 @@ std::map<DWORD, std::string> const wait_results
     VALUE_NAME(WAIT_FAILED),
 };
 
+std::map<DWORD, std::string> const registry_types
+{
+    VALUE_NAME(REG_BINARY),
+    VALUE_NAME(REG_DWORD),
+    VALUE_NAME(REG_DWORD_LITTLE_ENDIAN),
+    VALUE_NAME(REG_DWORD_BIG_ENDIAN),
+    VALUE_NAME(REG_EXPAND_SZ),
+    VALUE_NAME(REG_LINK),
+    VALUE_NAME(REG_MULTI_SZ),
+    VALUE_NAME(REG_NONE),
+    VALUE_NAME(REG_QWORD),
+    VALUE_NAME(REG_QWORD_LITTLE_ENDIAN),
+    VALUE_NAME(REG_SZ),
+};
+
 std::map<severity_level, std::string> const severity_names
 {
     { severity_level::trace, "trace" },

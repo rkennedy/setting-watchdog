@@ -6,12 +6,11 @@
 #pragma warning(push)
 #pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 
-#include <boost/log/sources/severity_feature.hpp>
 #include <boost/nowide/convert.hpp>
 
 #pragma warning(pop)
 
-HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM samDesired)
+static HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM samDesired)
 {
     HKEY result;
     RegCheck(RegOpenKeyExW(hKey, boost::nowide::widen(lpSubKey).c_str(), ulOptions, samDesired, &result), "opening registry key");
