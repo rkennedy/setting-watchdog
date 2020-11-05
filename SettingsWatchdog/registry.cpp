@@ -1,14 +1,11 @@
 #include "registry.hpp"
+
+DISABLE_ANALYSIS
+#include <boost/nowide/convert.hpp>
+REENABLE_ANALYSIS
+
 #include "errors.hpp"
 #include "logging.hpp"
-
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
-
-#include <boost/nowide/convert.hpp>
-
-#pragma warning(pop)
 
 static HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM samDesired)
 {

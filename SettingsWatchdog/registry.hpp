@@ -1,7 +1,5 @@
 #pragma once
-#include "errors.hpp"
-#include "string-maps.hpp"
-
+DISABLE_ANALYSIS
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -10,15 +8,13 @@
 
 #include <windows.h>
 
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
-
 #include <boost/assert.hpp>
 #include <boost/nowide/convert.hpp>
 #include <boost/numeric/conversion/cast.hpp>
+REENABLE_ANALYSIS
 
-#pragma warning(pop)
+#include "errors.hpp"
+#include "string-maps.hpp"
 
 namespace registry
 {

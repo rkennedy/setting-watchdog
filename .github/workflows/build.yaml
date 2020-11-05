@@ -18,6 +18,19 @@ jobs:
     - name: Add MSBuild
       uses: microsoft/setup-msbuild@v1.0.2
 
+    - name: Format source code
+      run: msbuild -t:FormatCode SettingsWatchdog.sln
+
+    - name: Check results
+      shell: bash
+      run: |
+        while read f; do
+          printf '::group::%s\n' "$f"
+          printf '::warning file=%s::%s\n' "$f" "$(git diff --color=always --shortstat "$f")"
+          git diff --color=always "$f"
+          printf '::endgroup::\n'
+        done < <(git ls-files --modified)
+
     - name: Install & build vcpkg packages
       uses: lukka/run-vcpkg@v4
       id: vcpkg

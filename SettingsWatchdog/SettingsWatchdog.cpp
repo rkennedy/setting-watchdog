@@ -1,9 +1,4 @@
-#include "config.hpp"
-#include "string-maps.hpp"
-#include "registry.hpp"
-#include "logging.hpp"
-#include "errors.hpp"
-#include "handles.hpp"
+DISABLE_ANALYSIS
 #include <windows.h>
 #include <wtsapi32.h>
 #include <sddl.h>
@@ -18,10 +13,6 @@
 #include <system_error>
 #include <type_traits>
 #include <vector>
-
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/core/noncopyable.hpp>
@@ -38,10 +29,16 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
-
-#pragma warning(pop)
+REENABLE_ANALYSIS
 
 #include "git-commit.hpp"
+
+#include "config.hpp"
+#include "string-maps.hpp"
+#include "registry.hpp"
+#include "logging.hpp"
+#include "errors.hpp"
+#include "handles.hpp"
 
 namespace po = boost::program_options;
 

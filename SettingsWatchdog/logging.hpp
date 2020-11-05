@@ -1,19 +1,14 @@
 #pragma once
-
+DISABLE_ANALYSIS
 #include <iosfwd>
 #include <vector>
 #include <string>
-
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
 
 #include <boost/any.hpp>
 #include <boost/format.hpp>
 #include <boost/log/sources/global_logger_storage.hpp>
 #include <boost/log/trivial.hpp>
-
-#pragma warning(pop)
+REENABLE_ANALYSIS
 
 enum class severity_level
 {

@@ -1,11 +1,6 @@
 #include "logging.hpp"
-#include "config.hpp"
-#include "string-maps.hpp"
 
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
-
+DISABLE_ANALYSIS
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <boost/log/attributes/clock.hpp>
 #include <boost/log/attributes/constant.hpp>
@@ -26,8 +21,10 @@
 #include <boost/program_options/errors.hpp>
 #include <boost/program_options/value_semantic.hpp>
 #include <boost/range/algorithm/find_if.hpp>
+REENABLE_ANALYSIS
 
-#pragma warning(pop)
+#include "config.hpp"
+#include "string-maps.hpp"
 
 namespace bl = boost::log;
 
@@ -35,6 +32,8 @@ BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(boost::winapi::Get
 BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCurrentThreadId()))
 BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
 
+#pragma warning(push)
+#pragma warning(disable: 4065)  // switch has default without case
 static bl::formatter const g_formatter = (
     bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
     % bl::expressions::format_date_time<boost::posix_time::ptime>(
@@ -54,6 +53,7 @@ static bl::formatter const g_formatter = (
             "TimeStamp", "%f")
     ]
 );
+#pragma warning(pop)
 
 static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
 {

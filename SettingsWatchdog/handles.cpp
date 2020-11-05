@@ -1,14 +1,11 @@
-#include "errors.hpp"
 #include "handles.hpp"
 
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
-
+DISABLE_ANALYSIS
 #include <boost/log/attributes/named_scope.hpp>
 #include <boost/nowide/convert.hpp>
+REENABLE_ANALYSIS
 
-#pragma warning(pop)
+#include "errors.hpp"
 
 BaseServiceHandle::BaseServiceHandle(SC_HANDLE const handle, char const* action):
     m_handle(WinCheck(handle, action))

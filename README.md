@@ -12,3 +12,24 @@ This watches for when those restrictions get enabled, and disables them.
   already logged in to the host.
 * Disables screen-saver restrictions. On a VM, the screen-saver restrictions of
   the host should be sufficient for protecting the VM, too.
+
+# Building
+
+Install dependencies:
+
+```bash
+vcpkg\\bootstrap-vcpkg.bat
+vcpkg\\vcpkg.exe install --triplet x64-windows-static @vcpkg-response.txt
+```
+
+Run the code formatter:
+
+```bash
+msbuild -t:FormatCode
+```
+
+Build the code:
+
+```bash
+msbuild -p:Configuration=Release
+```
