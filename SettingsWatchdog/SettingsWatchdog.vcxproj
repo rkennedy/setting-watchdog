@@ -58,7 +58,8 @@
       <SDLCheck>true</SDLCheck>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
-      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/Zc:__cplusplus /experimental:external /external:W0 /external:templates- /external:anglebrackets %(AdditionalOptions)</AdditionalOptions>
+      <ForcedIncludeFiles>warnings.hpp</ForcedIncludeFiles>
       <PrecompiledHeaderFile/>
       <PreprocessorDefinitions>BOOST_DLL_USE_STD_FS;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -115,6 +116,7 @@
     <ClInclude Include="handles.hpp" />
     <ClInclude Include="registry.hpp" />
     <ClInclude Include="string-maps.hpp" />
+    <ClInclude Include="warnings.hpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
@@ -140,6 +142,10 @@ inline auto git_commit = R"($(GitCommit))"%3b
   </PropertyGroup>
   <Target Name="DeleteCommitCode">
     <Delete Files="git-commit.hpp"/>
+  </Target>
+
+  <Target Name="FormatCode">
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-format.exe&quot; -i --style=file @(ClCompile, ' ') @(ClInclude, ' ')" ConsoleToMsBuild="true"/>
   </Target>
   <!-- vim: set et sw=2: -->
 </Project>

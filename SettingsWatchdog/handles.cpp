@@ -1,18 +1,14 @@
-#include "errors.hpp"
 #include "handles.hpp"
 
-#include <codeanalysis/warnings.h>
-#pragma warning(push)
-#pragma warning(disable: ALL_CODE_ANALYSIS_WARNINGS)
-
+DISABLE_ANALYSIS
 #include <boost/log/attributes/named_scope.hpp>
 #include <boost/nowide/convert.hpp>
+REENABLE_ANALYSIS
 
-#pragma warning(pop)
+#include "errors.hpp"
 
-BaseServiceHandle::BaseServiceHandle(SC_HANDLE const handle, char const* action):
-    m_handle(WinCheck(handle, action))
-{}
+BaseServiceHandle::BaseServiceHandle(SC_HANDLE const handle, char const* action): m_handle(WinCheck(handle, action))
+{ }
 
 BaseServiceHandle::~BaseServiceHandle()
 {
@@ -20,37 +16,32 @@ BaseServiceHandle::~BaseServiceHandle()
     CloseServiceHandle(m_handle);
 }
 
-BaseServiceHandle::operator SC_HANDLE() const {
+BaseServiceHandle::operator SC_HANDLE() const
+{
     BOOST_LOG_FUNC();
     return m_handle;
 }
 
 ServiceManagerHandle::ServiceManagerHandle(DWORD permissions):
-    BaseServiceHandle(OpenSCManager(nullptr, nullptr, permissions),
-                      "opening service control manager")
-{}
+    BaseServiceHandle(OpenSCManager(nullptr, nullptr, permissions), "opening service control manager")
+{ }
 
-ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, char const* name,
-                             char const* display_name, DWORD type, DWORD start,
-                             std::filesystem::path const& path) :
-    BaseServiceHandle(CreateServiceW(manager, boost::nowide::widen(name).c_str(), boost::nowide::widen(display_name).c_str(),
-                                    SERVICE_ALL_ACCESS, type, start,
-                                    SERVICE_ERROR_NORMAL, path.c_str(), nullptr,
-                                    nullptr, nullptr, nullptr, nullptr),
+ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, char const* name, char const* display_name,
+                             DWORD type, DWORD start, std::filesystem::path const& path):
+    BaseServiceHandle(CreateServiceW(manager, boost::nowide::widen(name).c_str(),
+                                     boost::nowide::widen(display_name).c_str(), SERVICE_ALL_ACCESS, type, start,
+                                     SERVICE_ERROR_NORMAL, path.c_str(), nullptr, nullptr, nullptr, nullptr, nullptr),
                       "creating service")
-{}
+{ }
 
-ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, char const* name,
-                             DWORD access):
+ServiceHandle::ServiceHandle(ServiceManagerHandle const& manager, char const* name, DWORD access):
     BaseServiceHandle(OpenServiceW(manager, boost::nowide::widen(name).c_str(), access), "opening service")
-{}
+{ }
 
-AutoCloseHandle::AutoCloseHandle(HANDLE handle) :
-    m_handle(handle)
-{}
+AutoCloseHandle::AutoCloseHandle(HANDLE handle): m_handle(handle)
+{ }
 
-AutoCloseHandle::AutoCloseHandle(AutoCloseHandle&& other) noexcept:
-    m_handle(other.m_handle)
+AutoCloseHandle::AutoCloseHandle(AutoCloseHandle&& other) noexcept: m_handle(other.m_handle)
 {
     BOOST_LOG_FUNC();
     other.m_handle = NULL;
@@ -77,7 +68,8 @@ AutoCloseHandle::operator HANDLE() const
 
 Event::Event():
     AutoCloseHandle(WinCheck(CreateEvent(nullptr,
-                                         true, // bManualReset
-                                         false, // bInitialState
-                                         nullptr), "creating event"))
-{}
+                                         true,  // bManualReset
+                                         false,  // bInitialState
+                                         nullptr),
+                             "creating event"))
+{ }

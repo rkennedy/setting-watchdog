@@ -1,13 +1,13 @@
 #pragma once
 
-#include "logging.hpp"
-
 #include <map>
 #include <optional>
 #include <string>
 #include <utility>
 
 #include <windows.h>
+
+#include "logging.hpp"
 
 extern std::map<DWORD, std::string> const control_names;
 

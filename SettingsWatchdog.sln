@@ -7,6 +7,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SettingsWatchdog", "Setting
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{EBB19BF6-2E7E-4BC3-A8FC-8730EB8330CE}"
 	ProjectSection(SolutionItems) = preProject
+		.clang-format = .clang-format
 		.editorconfig = .editorconfig
 		.gitignore = .gitignore
 		.github\workflows\build.yaml = .github\workflows\build.yaml
