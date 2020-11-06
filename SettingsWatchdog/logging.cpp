@@ -33,11 +33,11 @@ BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCu
 BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
 
 #pragma warning(push)
-#pragma warning(disable: 4065)  // switch has default without case
-static bl::formatter const g_formatter = (
-    bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
-    % bl::expressions::format_date_time<boost::posix_time::ptime>(
-        "TimeStamp", "%Y-%m-%d %H:%M:%S")
+#pragma warning(disable : 4065)  // switch has default without case
+// clang-format off
+static bl::formatter const g_formatter
+    = bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
+    % bl::expressions::format_date_time<boost::posix_time::ptime>("TimeStamp", "%Y-%m-%d %H:%M:%S")
     % process_id
     % thread_id
     % severity
@@ -51,8 +51,8 @@ static bl::formatter const g_formatter = (
         // %f gives six digits of precision. We want three.
         bl::expressions::stream << bl::expressions::format_date_time<boost::posix_time::ptime>(
             "TimeStamp", "%f")
-    ]
-);
+    ];
+// clang-format on
 #pragma warning(pop)
 
 static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
@@ -70,18 +70,12 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 
     auto const verbosity_filter = boost::phoenix::bind(&severity_filter, severity.or_none());
 
-    auto const console = bl::add_console_log(
-        boost::nowide::clog,
-        bl::keywords::filter = verbosity_filter,
-        bl::keywords::format = g_formatter
-    );
-    auto const file = bl::add_file_log(
-        bl::keywords::file_name = config::log_file.get().native(),
-        bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
-        bl::keywords::auto_flush = true,
-        bl::keywords::filter = verbosity_filter,
-        bl::keywords::format = g_formatter
-    );
+    auto const console = bl::add_console_log(boost::nowide::clog, bl::keywords::filter = verbosity_filter,
+                                             bl::keywords::format = g_formatter);
+    auto const file = bl::add_file_log(bl::keywords::file_name = config::log_file.get().native(),
+                                       bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
+                                       bl::keywords::auto_flush = true, bl::keywords::filter = verbosity_filter,
+                                       bl::keywords::format = g_formatter);
     return lg;
 }
 
@@ -97,7 +91,8 @@ void validate(boost::any& v, std::vector<std::string> const& values, severity_le
     po::validators::check_first_occurrence(v);
     std::string const& s = po::validators::get_single_string(values);
 
-    if (auto const it = boost::find_if(severity_names, [&s](auto p) { return p.second == s; }); it != severity_names.cend()) {
+    if (auto const it = boost::find_if(severity_names, [&s](auto p) { return p.second == s; });
+        it != severity_names.cend()) {
         v = it->first;
         return;
     }

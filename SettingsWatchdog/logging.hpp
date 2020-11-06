@@ -1,8 +1,8 @@
 #pragma once
 DISABLE_ANALYSIS
 #include <iosfwd>
-#include <vector>
 #include <string>
+#include <vector>
 
 #include <boost/any.hpp>
 #include <boost/format.hpp>

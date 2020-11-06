@@ -10,16 +10,15 @@ REENABLE_ANALYSIS
 static HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM samDesired)
 {
     HKEY result;
-    RegCheck(RegOpenKeyExW(hKey, boost::nowide::widen(lpSubKey).c_str(), ulOptions, samDesired, &result), "opening registry key");
+    RegCheck(RegOpenKeyExW(hKey, boost::nowide::widen(lpSubKey).c_str(), ulOptions, samDesired, &result),
+             "opening registry key");
     return result;
 }
 
-RegKey::RegKey(HKEY key, char const* name, DWORD permissions):
-    m_key(OpenRegKey(key, name, 0, permissions))
-{}
+RegKey::RegKey(HKEY key, char const* name, DWORD permissions): m_key(OpenRegKey(key, name, 0, permissions))
+{ }
 
-RegKey::RegKey(RegKey&& other) noexcept:
-    m_key(other.m_key)
+RegKey::RegKey(RegKey&& other) noexcept: m_key(other.m_key)
 {
     other.m_key = NULL;
 }
