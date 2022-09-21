@@ -18,8 +18,8 @@ This watches for when those restrictions get enabled, and disables them.
 Install dependencies:
 
 ```bash
-vcpkg\\bootstrap-vcpkg.bat
-vcpkg\\vcpkg.exe install --triplet x64-windows-static @vcpkg-response.txt
+vcpkg\bootstrap-vcpkg.bat
+vcpkg\vcpkg.exe install --triplet x64-windows-static @vcpkg-response.txt
 ```
 
 Run the code formatter:
