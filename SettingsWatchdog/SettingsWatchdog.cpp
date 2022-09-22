@@ -101,7 +101,7 @@ void InstallService()
 
     std::wstring const description_string
         = boost::nowide::widen("Watch registry settings and set them back to desired values");
-    SERVICE_DESCRIPTIONW description = { const_cast<wchar_t*>(description_string.c_str()) };
+    SERVICE_DESCRIPTIONW description = { .lpDescription = const_cast<wchar_t*>(description_string.c_str()) };
     WinCheck(ChangeServiceConfig2W(service, SERVICE_CONFIG_DESCRIPTION, &description), "configuring service");
     WDLOG(trace, "Service configured");
 }
@@ -263,8 +263,13 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
         default:
             return ERROR_CALL_NOT_IMPLEMENTED;
         case SERVICE_CONTROL_STOP: {
-            SERVICE_STATUS stop_pending
-                = { ServiceType, SERVICE_STOP_PENDING, 0, NO_ERROR, 0, context->stopping_checkpoint++, 10 };
+            SERVICE_STATUS stop_pending = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_STOP_PENDING,
+                .dwWin32ExitCode = NO_ERROR,
+                .dwCheckPoint = context->stopping_checkpoint++,
+                .dwWaitHint = 10,
+            };
             context->SetServiceStatus(stop_pending);
 
             SetEvent(context->StopEvent);
@@ -372,8 +377,13 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         ServiceContext<SettingsWatchdogContext> context("SettingsWatchdog", ServiceHandler);
         try {
             DWORD starting_checkpoint = 0;
-            SERVICE_STATUS start_pending
-                = { ServiceType, SERVICE_START_PENDING, 0, NO_ERROR, 0, starting_checkpoint++, 10 };
+            SERVICE_STATUS start_pending = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_START_PENDING,
+                .dwWin32ExitCode = NO_ERROR,
+                .dwCheckPoint = starting_checkpoint++,
+                .dwWaitHint = 10,
+            };
             context.SetServiceStatus(start_pending);
 
             // Event handle must be created first because it must outlive its
@@ -418,7 +428,10 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             EstablishNotification(system_key, system_notify_event);
 
             SERVICE_STATUS started = {
-                ServiceType, SERVICE_RUNNING, SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE, NO_ERROR, 0, 0, 0
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_RUNNING,
+                .dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE,
+                .dwWin32ExitCode = NO_ERROR,
             };
             context.SetServiceStatus(started);
 
@@ -458,8 +471,13 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     }
                     case WAIT_OBJECT_0 + 1: {
                         WDLOG(trace, "Stop requested");
-                        SERVICE_STATUS stop_pending
-                            = { ServiceType, SERVICE_STOP_PENDING, 0, NO_ERROR, 0, context.stopping_checkpoint++, 10 };
+                        SERVICE_STATUS stop_pending = {
+                            .dwServiceType = ServiceType,
+                            .dwCurrentState = SERVICE_STOP_PENDING,
+                            .dwWin32ExitCode = NO_ERROR,
+                            .dwCheckPoint = context.stopping_checkpoint++,
+                            .dwWaitHint = 10,
+                        };
                         context.SetServiceStatus(stop_pending);
                         stop_requested = true;
                         break;
@@ -505,21 +523,27 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     }
                 }
             } while (!stop_requested && PrepareNextIteration());
-            SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR, 0, 0, 0 };
+            SERVICE_STATUS stopped = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_STOPPED,
+                .dwWin32ExitCode = NO_ERROR,
+            };
             context.SetServiceStatus(stopped);
         } catch (std::system_error const& ex) {
             if (ex.code().category() == std::system_category()) {
-                SERVICE_STATUS stopped
-                    = { ServiceType, SERVICE_STOPPED, 0, boost::numeric_cast<DWORD>(ex.code().value()), 0, 0, 0 };
+                SERVICE_STATUS stopped = {
+                    .dwServiceType = ServiceType,
+                    .dwCurrentState = SERVICE_STOPPED,
+                    .dwWin32ExitCode = boost::numeric_cast<DWORD>(ex.code().value()),
+                };
                 context.SetServiceStatus(stopped);
             } else {
-                SERVICE_STATUS stopped = { ServiceType,
-                                           SERVICE_STOPPED,
-                                           0,
-                                           ERROR_SERVICE_SPECIFIC_ERROR,
-                                           boost::numeric_cast<DWORD>(ex.code().value()),
-                                           0,
-                                           0 };
+                SERVICE_STATUS stopped = {
+                    .dwServiceType = ServiceType,
+                    .dwCurrentState = SERVICE_STOPPED,
+                    .dwWin32ExitCode = ERROR_SERVICE_SPECIFIC_ERROR,
+                    .dwServiceSpecificExitCode = boost::numeric_cast<DWORD>(ex.code().value()),
+                };
                 context.SetServiceStatus(stopped);
             }
             throw;
