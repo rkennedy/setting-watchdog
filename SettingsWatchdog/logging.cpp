@@ -20,7 +20,6 @@ DISABLE_ANALYSIS
 #include <boost/phoenix/operator/arithmetic.hpp>
 #include <boost/program_options/errors.hpp>
 #include <boost/program_options/value_semantic.hpp>
-#include <boost/range/algorithm/find_if.hpp>
 REENABLE_ANALYSIS
 
 #include "config.hpp"
@@ -88,11 +87,8 @@ void validate(boost::any& v, std::vector<std::string> const& values, severity_le
     po::validators::check_first_occurrence(v);
     std::string const& s = po::validators::get_single_string(values);
 
-    if (auto const it = boost::find_if(severity_names, [&s](auto p) { return p.second == s; });
-        it != severity_names.cend()) [[likely]]
-    {
-        v = it->first;
-        return;
-    }
-    throw po::validation_error(po::validation_error::invalid_option_value);
+    auto const sev = get_key(severity_names, s);
+    if (!sev) [[unlikely]]
+        throw po::validation_error(po::validation_error::invalid_option_value);
+    v = sev.value();
 }
