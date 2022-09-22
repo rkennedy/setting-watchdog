@@ -92,7 +92,8 @@ void validate(boost::any& v, std::vector<std::string> const& values, severity_le
     std::string const& s = po::validators::get_single_string(values);
 
     if (auto const it = boost::find_if(severity_names, [&s](auto p) { return p.second == s; });
-        it != severity_names.cend()) {
+        it != severity_names.cend()) [[likely]]
+    {
         v = it->first;
         return;
     }

@@ -50,7 +50,7 @@ AutoCloseHandle::AutoCloseHandle(AutoCloseHandle&& other) noexcept: m_handle(oth
 AutoCloseHandle::~AutoCloseHandle()
 {
     BOOST_LOG_FUNC();
-    if (m_handle)
+    if (m_handle) [[likely]]
         CloseHandle(m_handle);
 }
 

@@ -274,7 +274,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
             WDLOG(trace, "session-change code %1%")
                 % get(session_change_codes, dwEventType).value_or(std::to_string(dwEventType));
             auto const notification = static_cast<WTSSESSION_NOTIFICATION const*>(lpEventData);
-            if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) {
+            if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) [[unlikely]] {
                 // The OS is sending the wrong structure size, so let's pretend
                 // we don't know how to handle it.
                 WDLOG(error, "Expected struct size %1% but got %2% instead") % sizeof(WTSSESSION_NOTIFICATION)
@@ -355,7 +355,7 @@ bool check_range(T const& min, T const& max, T const& value)
 template <typename T>
 bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
 {
-    if (check_range(min, max, value))
+    if (check_range(min, max, value)) [[likely]]
         return true;
     WDLOG(warning, "%1% %2% not in range [%3%,%4%)") % label % value % min % max;
     return false;

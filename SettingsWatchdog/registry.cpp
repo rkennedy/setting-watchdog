@@ -25,7 +25,7 @@ RegKey::RegKey(RegKey&& other) noexcept: m_key(other.m_key)
 
 RegKey::~RegKey()
 {
-    if (m_key)
+    if (m_key) [[likely]]
         RegCloseKey(m_key);
 }
 
