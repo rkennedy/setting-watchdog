@@ -5,6 +5,8 @@
 #include <string>
 #include <utility>
 
+#include <boost/range/algorithm/find_if.hpp>
+
 #include <windows.h>
 
 #include "logging.hpp"
@@ -24,5 +26,15 @@ std::optional<typename Map::mapped_type> get(Map const& map, T&& key)
 {
     if (auto it = map.find(std::forward<T>(key)); it != map.end())
         return it->second;
+    return std::nullopt;
+}
+
+template <typename Map, typename T>
+std::optional<typename Map::key_type> get_key(Map const& map, T&& value)
+{
+    if (auto const it = boost::find_if(map, [&value](auto p) { return p.second == value; }); it != map.cend())
+        [[likely]] {
+        return it->first;
+    }
     return std::nullopt;
 }
