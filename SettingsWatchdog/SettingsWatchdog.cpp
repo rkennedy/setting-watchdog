@@ -401,7 +401,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 WTSFreeMemoryEx(WTSTypeSessionInfoLevel1, info, session_count);
             });
             std::for_each_n(session_info.get(), session_count, [&context](WTS_SESSION_INFO_1 const& info) {
-                WDLOG(trace, "session %1%") % info.pSessionName;
+                WDLOG(trace, "session %1%") % boost::nowide::narrow(info.pSessionName);
                 if (!info.pUserName) {
                     WDLOG(debug, "null user name; skipped");
                     return;
@@ -465,8 +465,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         WDLOG(trace, "Session list changed");
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
-                        std::experimental::erase_if(context.sessions,
-                                                    [](auto const& item) { return !item.second.running; });
+                        std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
                         boost::for_each(context.sessions | boost::adaptors::map_values
                                             | boost::adaptors::filtered(std::mem_fn(&SessionData::new_)),
                                         [](SessionData& session) {
