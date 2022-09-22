@@ -201,7 +201,7 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
     WDLOG(trace, "adding session ID %1%") % dwSessionId;
     {
         logging_lock_guard session_guard(context->session_mutex, "assertion");
-        assert(context->sessions.find(dwSessionId) == context->sessions.end());
+        assert(context->sessions.contains(dwSessionId));
     }
     // Get session user name
     WTSString name_buffer;
@@ -547,24 +547,24 @@ int main(int argc, char* argv[])
         po::store(po::parse_command_line(argc, argv, desc), vm);
         po::notify(vm);
 
-        if (vm.count("help")) {
+        if (vm.contains("help")) {
             boost::nowide::cout << desc << std::endl;
             return EXIT_SUCCESS;
         }
-        if (vm.count("log-location")) {
+        if (vm.contains("log-location")) {
             config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
         }
-        if (vm.count("verbose")) {
+        if (vm.contains("verbose")) {
             config::verbosity.set(vm.at("verbose").as<severity_level>());
         }
         WDLOG(info, "Running %1%") % boost::nowide::narrow(boost::dll::program_location().native());
         WDLOG(trace, "Commit %1%") % git_commit;
 
-        if (vm.count("install")) {
+        if (vm.contains("install")) {
             InstallService();
             return EXIT_SUCCESS;
         }
-        if (vm.count("uninstall")) {
+        if (vm.contains("uninstall")) {
             UninstallService();
             return EXIT_SUCCESS;
         }
