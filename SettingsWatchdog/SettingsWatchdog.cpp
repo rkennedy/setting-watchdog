@@ -63,7 +63,7 @@ public:
     {
         return &m_value;
     }
-    operator char const *() const
+    operator char const*() const
     {
         m_narrow_value = boost::nowide::narrow(m_value);
         return m_narrow_value.c_str();
