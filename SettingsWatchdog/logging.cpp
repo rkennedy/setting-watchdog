@@ -32,8 +32,6 @@ BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(boost::winapi::Get
 BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCurrentThreadId()))
 BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
 
-#pragma warning(push)
-#pragma warning(disable : 4065)  // switch has default without case
 // clang-format off
 static bl::formatter const g_formatter
     = bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
@@ -53,7 +51,6 @@ static bl::formatter const g_formatter
             "TimeStamp", "%f")
     ];
 // clang-format on
-#pragma warning(pop)
 
 static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
 {
