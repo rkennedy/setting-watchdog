@@ -199,10 +199,13 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
 {
     BOOST_LOG_FUNC();
     WDLOG(trace, "adding session ID %1%") % dwSessionId;
+#ifndef BOOST_ASSERT_IS_VOID
     {
         logging_lock_guard session_guard(context->session_mutex, "assertion");
-        assert(context->sessions.contains(dwSessionId));
+        BOOST_ASSERT(context->sessions.contains(dwSessionId));
     }
+#endif
+
     // Get session user name
     WTSString name_buffer;
     DWORD name_buffer_bytes;
