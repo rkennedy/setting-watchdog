@@ -101,7 +101,7 @@ void InstallService()
 
     std::wstring const description_string
         = boost::nowide::widen("Watch registry settings and set them back to desired values");
-    SERVICE_DESCRIPTIONW description = { const_cast<wchar_t*>(description_string.c_str()) };
+    SERVICE_DESCRIPTIONW description = { .lpDescription = const_cast<wchar_t*>(description_string.c_str()) };
     WinCheck(ChangeServiceConfig2W(service, SERVICE_CONFIG_DESCRIPTION, &description), "configuring service");
     WDLOG(trace, "Service configured");
 }
@@ -199,10 +199,13 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
 {
     BOOST_LOG_FUNC();
     WDLOG(trace, "adding session ID %1%") % dwSessionId;
+#ifndef BOOST_ASSERT_IS_VOID
     {
         logging_lock_guard session_guard(context->session_mutex, "assertion");
-        assert(context->sessions.find(dwSessionId) == context->sessions.end());
+        BOOST_ASSERT(context->sessions.contains(dwSessionId));
     }
+#endif
+
     // Get session user name
     WTSString name_buffer;
     DWORD name_buffer_bytes;
@@ -260,8 +263,13 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
         default:
             return ERROR_CALL_NOT_IMPLEMENTED;
         case SERVICE_CONTROL_STOP: {
-            SERVICE_STATUS stop_pending
-                = { ServiceType, SERVICE_STOP_PENDING, 0, NO_ERROR, 0, context->stopping_checkpoint++, 10 };
+            SERVICE_STATUS stop_pending = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_STOP_PENDING,
+                .dwWin32ExitCode = NO_ERROR,
+                .dwCheckPoint = context->stopping_checkpoint++,
+                .dwWaitHint = 10,
+            };
             context->SetServiceStatus(stop_pending);
 
             SetEvent(context->StopEvent);
@@ -274,7 +282,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
             WDLOG(trace, "session-change code %1%")
                 % get(session_change_codes, dwEventType).value_or(std::to_string(dwEventType));
             auto const notification = static_cast<WTSSESSION_NOTIFICATION const*>(lpEventData);
-            if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) {
+            if (notification->cbSize != sizeof(WTSSESSION_NOTIFICATION)) [[unlikely]] {
                 // The OS is sending the wrong structure size, so let's pretend
                 // we don't know how to handle it.
                 WDLOG(error, "Expected struct size %1% but got %2% instead") % sizeof(WTSSESSION_NOTIFICATION)
@@ -355,7 +363,7 @@ bool check_range(T const& min, T const& max, T const& value)
 template <typename T>
 bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
 {
-    if (check_range(min, max, value))
+    if (check_range(min, max, value)) [[likely]]
         return true;
     WDLOG(warning, "%1% %2% not in range [%3%,%4%)") % label % value % min % max;
     return false;
@@ -369,8 +377,13 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         ServiceContext<SettingsWatchdogContext> context("SettingsWatchdog", ServiceHandler);
         try {
             DWORD starting_checkpoint = 0;
-            SERVICE_STATUS start_pending
-                = { ServiceType, SERVICE_START_PENDING, 0, NO_ERROR, 0, starting_checkpoint++, 10 };
+            SERVICE_STATUS start_pending = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_START_PENDING,
+                .dwWin32ExitCode = NO_ERROR,
+                .dwCheckPoint = starting_checkpoint++,
+                .dwWaitHint = 10,
+            };
             context.SetServiceStatus(start_pending);
 
             // Event handle must be created first because it must outlive its
@@ -401,7 +414,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 WTSFreeMemoryEx(WTSTypeSessionInfoLevel1, info, session_count);
             });
             std::for_each_n(session_info.get(), session_count, [&context](WTS_SESSION_INFO_1 const& info) {
-                WDLOG(trace, "session %1%") % info.pSessionName;
+                WDLOG(trace, "session %1%") % boost::nowide::narrow(info.pSessionName);
                 if (!info.pUserName) {
                     WDLOG(debug, "null user name; skipped");
                     return;
@@ -415,7 +428,10 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             EstablishNotification(system_key, system_notify_event);
 
             SERVICE_STATUS started = {
-                ServiceType, SERVICE_RUNNING, SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE, NO_ERROR, 0, 0, 0
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_RUNNING,
+                .dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SESSIONCHANGE,
+                .dwWin32ExitCode = NO_ERROR,
             };
             context.SetServiceStatus(started);
 
@@ -455,8 +471,13 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     }
                     case WAIT_OBJECT_0 + 1: {
                         WDLOG(trace, "Stop requested");
-                        SERVICE_STATUS stop_pending
-                            = { ServiceType, SERVICE_STOP_PENDING, 0, NO_ERROR, 0, context.stopping_checkpoint++, 10 };
+                        SERVICE_STATUS stop_pending = {
+                            .dwServiceType = ServiceType,
+                            .dwCurrentState = SERVICE_STOP_PENDING,
+                            .dwWin32ExitCode = NO_ERROR,
+                            .dwCheckPoint = context.stopping_checkpoint++,
+                            .dwWaitHint = 10,
+                        };
                         context.SetServiceStatus(stop_pending);
                         stop_requested = true;
                         break;
@@ -465,8 +486,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         WDLOG(trace, "Session list changed");
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
-                        std::experimental::erase_if(context.sessions,
-                                                    [](auto const& item) { return !item.second.running; });
+                        std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
                         boost::for_each(context.sessions | boost::adaptors::map_values
                                             | boost::adaptors::filtered(std::mem_fn(&SessionData::new_)),
                                         [](SessionData& session) {
@@ -503,21 +523,27 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     }
                 }
             } while (!stop_requested && PrepareNextIteration());
-            SERVICE_STATUS stopped = { ServiceType, SERVICE_STOPPED, 0, NO_ERROR, 0, 0, 0 };
+            SERVICE_STATUS stopped = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_STOPPED,
+                .dwWin32ExitCode = NO_ERROR,
+            };
             context.SetServiceStatus(stopped);
         } catch (std::system_error const& ex) {
             if (ex.code().category() == std::system_category()) {
-                SERVICE_STATUS stopped
-                    = { ServiceType, SERVICE_STOPPED, 0, boost::numeric_cast<DWORD>(ex.code().value()), 0, 0, 0 };
+                SERVICE_STATUS stopped = {
+                    .dwServiceType = ServiceType,
+                    .dwCurrentState = SERVICE_STOPPED,
+                    .dwWin32ExitCode = boost::numeric_cast<DWORD>(ex.code().value()),
+                };
                 context.SetServiceStatus(stopped);
             } else {
-                SERVICE_STATUS stopped = { ServiceType,
-                                           SERVICE_STOPPED,
-                                           0,
-                                           ERROR_SERVICE_SPECIFIC_ERROR,
-                                           boost::numeric_cast<DWORD>(ex.code().value()),
-                                           0,
-                                           0 };
+                SERVICE_STATUS stopped = {
+                    .dwServiceType = ServiceType,
+                    .dwCurrentState = SERVICE_STOPPED,
+                    .dwWin32ExitCode = ERROR_SERVICE_SPECIFIC_ERROR,
+                    .dwServiceSpecificExitCode = boost::numeric_cast<DWORD>(ex.code().value()),
+                };
                 context.SetServiceStatus(stopped);
             }
             throw;
@@ -548,24 +574,24 @@ int main(int argc, char* argv[])
         po::store(po::parse_command_line(argc, argv, desc), vm);
         po::notify(vm);
 
-        if (vm.count("help")) {
+        if (vm.contains("help")) {
             boost::nowide::cout << desc << std::endl;
             return EXIT_SUCCESS;
         }
-        if (vm.count("log-location")) {
+        if (vm.contains("log-location")) {
             config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
         }
-        if (vm.count("verbose")) {
+        if (vm.contains("verbose")) {
             config::verbosity.set(vm.at("verbose").as<severity_level>());
         }
         WDLOG(info, "Running %1%") % boost::nowide::narrow(boost::dll::program_location().native());
         WDLOG(trace, "Commit %1%") % git_commit;
 
-        if (vm.count("install")) {
+        if (vm.contains("install")) {
             InstallService();
             return EXIT_SUCCESS;
         }
-        if (vm.count("uninstall")) {
+        if (vm.contains("uninstall")) {
             UninstallService();
             return EXIT_SUCCESS;
         }

@@ -8,7 +8,7 @@
 template <typename T>
 T&& WinCheck(T&& arg, char const* message)
 {
-    if (!arg) {
+    if (!arg) [[unlikely]] {
         std::error_code ec(GetLastError(), std::system_category());
         throw std::system_error(ec, message);
     }
