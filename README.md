@@ -19,7 +19,7 @@ Install dependencies:
 
 ```bash
 vcpkg\bootstrap-vcpkg.bat
-vcpkg\vcpkg.exe install --triplet x64-windows-static @vcpkg-response.txt
+vcpkg\vcpkg.exe install --triplet x64-windows-static
 ```
 
 Run the code formatter:

@@ -1,0 +1,21 @@
+{
+  "name": "setting-watchdog",
+  "version-string": "1.0.0",
+  "description": "Reset OS settings when they change.",
+  "dependencies": [
+    "boost-algorithm",
+    "boost-any",
+    "boost-core",
+    "boost-date-time",
+    "boost-dll",
+    "boost-format",
+    "boost-log",
+    "boost-nowide",
+    "boost-numeric-conversion",
+    "boost-phoenix",
+    "boost-program-options",
+    "boost-range",
+    "boost-winapi"
+  ],
+  "$modeline": "vim: set et sw=2 tw=2:"
+}

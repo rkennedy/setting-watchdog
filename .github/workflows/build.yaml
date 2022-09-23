@@ -37,8 +37,7 @@ jobs:
       uses: lukka/run-vcpkg@v10
       id: vcpkg
       with:
-        vcpkgArguments: '@${{ github.workspace }}/vcpkg-response.txt'
-        appendedCacheKey: vcpkg-${{ hashFiles('${{ github.workspace }}/vcpkg-response.txt') }}
+        runVcpkgInstall: true
 
     - name: Integrate vcpkg
       run: vcpkg integrate install
