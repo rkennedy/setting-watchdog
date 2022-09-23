@@ -8,7 +8,6 @@
     "boost-core",
     "boost-date-time",
     "boost-dll",
-    "boost-format",
     "boost-log",
     "boost-nowide",
     "boost-numeric-conversion",
