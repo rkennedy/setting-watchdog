@@ -44,19 +44,17 @@ auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Polici
 auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
 DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
-template <typename T>
+template <void (*FREE)(void*)>
 class AutoFreeString: private boost::noncopyable
 {
 private:
     wchar_t* m_value = NULL;
     std::string mutable m_narrow_value;
-    AutoFreeString() = default;
-    friend T;
 
 public:
     ~AutoFreeString()
     {
-        T::free(m_value);
+        FREE(m_value);
     }
     wchar_t** operator&()
     {
@@ -69,23 +67,8 @@ public:
     }
 };
 
-class WTSString: public AutoFreeString<WTSString>
-{
-public:
-    static void free(wchar_t* value)
-    {
-        WTSFreeMemory(value);
-    }
-};
-
-class LocalString: public AutoFreeString<LocalString>
-{
-public:
-    static void free(wchar_t* value)
-    {
-        LocalFree(value);
-    }
-};
+using WTSString = AutoFreeString<[](void* arg) { WTSFreeMemory(arg); }>;
+using LocalString = AutoFreeString<[](void* arg) { LocalFree(arg); }>;
 
 void InstallService()
 {
