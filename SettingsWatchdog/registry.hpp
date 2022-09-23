@@ -1,6 +1,7 @@
 #pragma once
 DISABLE_ANALYSIS
 #include <cstdint>
+#include <format>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -114,8 +115,8 @@ namespace registry
                             }
                             default:
                                 throw std::domain_error(
-                                    boost::str(boost::format("unsupported registry type %1%")
-                                               % ::get(registry_types, type).value_or(std::to_string(type))));
+                                    std::format("unsupported registry type {}",
+                                                ::get(registry_types, type).value_or(std::to_string(type))));
                         }
                     } else if constexpr (std::disjunction_v<std::is_constructible<T, std::string>,
                                                             std::is_constructible<T, std::wstring>>) {
@@ -142,8 +143,8 @@ namespace registry
                             }
                             default:
                                 throw std::domain_error(
-                                    boost::str(boost::format("unsupported registry type %1%")
-                                               % ::get(registry_types, type).value_or(std::to_string(type))));
+                                    std::format("unsupported registry type {}",
+                                                ::get(registry_types, type).value_or(std::to_string(type))));
                         }
                     }
             }

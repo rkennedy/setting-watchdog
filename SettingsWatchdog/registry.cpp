@@ -38,13 +38,13 @@ void DeleteRegistryValue(HKEY key, char const* name)
 {
     switch (LONG const result = RegDeleteValueW(key, boost::nowide::widen(name).c_str()); result) {
         case ERROR_SUCCESS:
-            WDLOG(info, "Deleted %1% value") % name;
+            WDLOG(info) << std::format("Deleted {} value", name);
             break;
         case ERROR_FILE_NOT_FOUND:
-            WDLOG(trace, "%1% value does not exist") % name;
+            WDLOG(trace) << std::format("{} value does not exist", name);
             break;
         default:
-            WDLOG(error, "Error deleting %1% value: %2%") % name % result;
+            WDLOG(error) << std::format("Error deleting {} value: {}", name, result);
             break;
     }
 }
