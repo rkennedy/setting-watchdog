@@ -20,6 +20,8 @@ DISABLE_ANALYSIS
 #include <boost/phoenix/operator/arithmetic.hpp>
 #include <boost/program_options/errors.hpp>
 #include <boost/program_options/value_semantic.hpp>
+
+#include <windows.h>
 REENABLE_ANALYSIS
 
 #include "config.hpp"
@@ -27,8 +29,8 @@ REENABLE_ANALYSIS
 
 namespace bl = boost::log;
 
-BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(boost::winapi::GetCurrentProcessId()))
-BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(boost::winapi::GetCurrentThreadId()))
+BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(::GetCurrentProcessId()))
+BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(::GetCurrentThreadId()))
 BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
 
 // clang-format off
@@ -60,8 +62,8 @@ BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 {
     logger_type lg;
     lg.add_attribute("TimeStamp", bl::attributes::local_clock());
-    lg.add_attribute("ProcessId", bl::attributes::make_constant(boost::winapi::GetCurrentProcessId()));
-    lg.add_attribute("ThreadId", bl::attributes::make_function(&boost::winapi::GetCurrentThreadId));
+    lg.add_attribute("ProcessId", bl::attributes::make_constant(::GetCurrentProcessId()));
+    lg.add_attribute("ThreadId", bl::attributes::make_function(&::GetCurrentThreadId));
     lg.add_attribute("Scope", bl::attributes::named_scope());
 
     auto const verbosity_filter = boost::phoenix::bind(&severity_filter, severity.or_none());

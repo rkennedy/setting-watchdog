@@ -14,8 +14,7 @@
     "boost-numeric-conversion",
     "boost-phoenix",
     "boost-program-options",
-    "boost-range",
-    "boost-winapi"
+    "boost-range"
   ],
   "$modeline": "vim: set et sw=2 tw=2:"
 }
