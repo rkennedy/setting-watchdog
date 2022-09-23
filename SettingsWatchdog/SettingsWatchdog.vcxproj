@@ -141,6 +141,9 @@ inline auto git_commit = R"($(GitCommit))"%3b
   <PropertyGroup>
     <CleanDependsOn>DeleteCommitCode; $(CleanDependsOn)</CleanDependsOn>
   </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+  </PropertyGroup>
   <Target Name="DeleteCommitCode">
     <Delete Files="git-commit.hpp"/>
   </Target>

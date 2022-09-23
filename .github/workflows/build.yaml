@@ -34,11 +34,10 @@ jobs:
         done < <(git ls-files --modified)
 
     - name: Install & build vcpkg packages
-      uses: lukka/run-vcpkg@v4
+      uses: lukka/run-vcpkg@v10
       id: vcpkg
       with:
-        vcpkgArguments: '@${{ github.workspace }}/vcpkg-response.txt'
-        appendedCacheKey: vcpkg-${{ hashFiles('${{ github.workspace }}/vcpkg-response.txt') }}
+        runVcpkgInstall: true
 
     - name: Integrate vcpkg
       run: vcpkg integrate install
