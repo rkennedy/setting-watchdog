@@ -1,4 +1,5 @@
 DISABLE_ANALYSIS
+#include <iostream>
 #include <algorithm>
 #include <exception>
 #include <experimental/map>
@@ -619,7 +620,12 @@ int main(int argc, char* argv[])
         WDLOG(error) << std::format("Error ({}) {}", ex.code(), boost::algorithm::trim_copy(std::string(ex.what())));
         return EXIT_FAILURE;
     } catch (std::exception const& ex) {
-        WDLOG(error) << std::format("Error: {}", boost::algorithm::trim_copy(std::string(ex.what())));
+        auto const msg = std::format("Error: {}", boost::algorithm::trim_copy(std::string(ex.what())));
+        try {
+            WDLOG(error) << msg;
+        } catch (std::exception const&) {
+            std::clog << std::format("Logging failed: {}\n{}", ex.what(), msg);
+        }
         return EXIT_FAILURE;
     }
 }
