@@ -32,6 +32,7 @@ namespace registry
         std::wstring const m_subkey;
         std::wstring const m_value_name;
         T const m_default_value;
+        std::optional<T> mutable m_current_value;
 
     public:
         value(HKEY key, std::string const& subkey, std::string const& value_name, T const& default_value):
@@ -51,6 +52,7 @@ namespace registry
         void set(U const& new_value)
         {
             if constexpr (std::disjunction_v<std::is_integral<T>, std::is_enum<T>>) {
+                m_current_value = new_value;
                 using store_type = std::conditional_t<sizeof new_value <= sizeof(DWORD), DWORD, int64_t>;
                 store_type const store_value = static_cast<store_type>(new_value);
                 static_assert(sizeof store_value >= sizeof new_value);
@@ -63,6 +65,7 @@ namespace registry
             } else if constexpr (std::is_same_v<U, std::string>) {
                 set(boost::nowide::widen(new_value));
             } else if constexpr (std::is_same_v<U, std::wstring>) {
+                m_current_value = new_value;
                 RegCheck(RegSetKeyValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), REG_SZ,
                                          reinterpret_cast<BYTE const*>(new_value.data()),
                                          boost::numeric_cast<DWORD>((new_value.size() + 1) * sizeof(wchar_t))),
@@ -102,7 +105,9 @@ namespace registry
                                 RegCheck(RegGetValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), RRF_RT_REG_DWORD,
                                                       nullptr, &result, &data_size),
                                          "reading dword value");
-                                return boost::numeric_cast<T>(result);
+                                T const final_result = boost::numeric_cast<T>(result);
+                                m_current_value = final_result;
+                                return final_result;
                             }
                             case REG_QWORD: {
                                 int64_t result;
@@ -111,7 +116,9 @@ namespace registry
                                 RegCheck(RegGetValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), RRF_RT_REG_QWORD,
                                                       nullptr, &result, &data_size),
                                          "reading qword value");
-                                return boost::numeric_cast<T>(result);
+                                T const final_result = boost::numeric_cast<T>(result);
+                                m_current_value = final_result;
+                                return final_result;
                             }
                             default:
                                 throw std::domain_error(
@@ -138,8 +145,10 @@ namespace registry
                                 if constexpr (!std::is_constructible_v<T, std::wstring>) {
                                     return boost::nowide::narrow(result);
                                 }
-                                return std::wstring(reinterpret_cast<wchar_t const*>(buffer.data()),
-                                                    data_size / sizeof(wchar_t) - 1);
+                                std::wstring const final_result(reinterpret_cast<wchar_t const*>(buffer.data()),
+                                                                data_size / sizeof(wchar_t) - 1);
+                                m_current_value = final_result;
+                                return final_result;
                             }
                             default:
                                 throw std::domain_error(
@@ -148,7 +157,7 @@ namespace registry
                         }
                     }
             }
-            return m_default_value;
+            return m_current_value.value_or(m_default_value);
         }
     };
 }  // namespace registry
