@@ -572,10 +572,26 @@ int main(int argc, char* argv[])
             return EXIT_SUCCESS;
         }
         if (vm.contains("log-location")) {
-            config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
+            try {
+                config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
+            } catch (std::system_error const& ex) {
+                std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
+                if (ex.code() != error_access_denied) {
+                    throw;
+                }
+                // We're unable to store the log location. No big deal.
+            }
         }
         if (vm.contains("verbose")) {
-            config::verbosity.set(vm.at("verbose").as<severity_level>());
+            try {
+                config::verbosity.set(vm.at("verbose").as<severity_level>());
+            } catch (std::system_error const& ex) {
+                std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
+                if (ex.code() != error_access_denied) {
+                    throw;
+                }
+                // We're unable to store the verbosity. No big deal.
+            }
         }
         WDLOG(info) << std::format("Running {}", boost::nowide::narrow(boost::dll::program_location().native()));
         WDLOG(trace) << std::format("Commit {}", git_commit);
