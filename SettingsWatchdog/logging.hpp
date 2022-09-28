@@ -5,26 +5,32 @@ DISABLE_ANALYSIS
 #include <vector>
 
 #include <boost/any.hpp>
-#include <boost/log/sources/global_logger_storage.hpp>
-#include <boost/log/trivial.hpp>
+#include <glog/logging.h>
 REENABLE_ANALYSIS
+
+void CustomPrefix(std::ostream& s, google::LogMessageInfo const& l, void*);
+
+class ScopeMarker
+{
+public:
+    ScopeMarker(char const* name);
+    ~ScopeMarker();
+};
+
+#define BOOST_LOG_FUNC()            \
+    ScopeMarker const CuRrEnT_ScOpE \
+    {                               \
+        __FUNCTION__                \
+    }
 
 enum class severity_level
 {
-    trace,
-    debug,
-    info,
-    warning,
-    error,
-    fatal,
+    info = google::INFO,
+    warning = google::WARNING,
+    error = google::ERROR,
+    fatal = google::FATAL,
 };
 
 std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, severity_level sev);
 
 void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int);
-
-using logger_type = boost::log::sources::severity_logger_mt<severity_level>;
-
-BOOST_LOG_GLOBAL_LOGGER(wdlog, logger_type)
-
-#define WDLOG(sev) BOOST_LOG_SEV(wdlog::get(), (severity_level::sev))

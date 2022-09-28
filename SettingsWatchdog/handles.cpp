@@ -1,11 +1,11 @@
 #include "handles.hpp"
 
 DISABLE_ANALYSIS
-#include <boost/log/attributes/named_scope.hpp>
 #include <boost/nowide/convert.hpp>
 REENABLE_ANALYSIS
 
 #include "errors.hpp"
+#include "logging.hpp"
 
 BaseServiceHandle::BaseServiceHandle(SC_HANDLE const handle, char const* action): m_handle(WinCheck(handle, action))
 { }

@@ -61,12 +61,12 @@
       <AdditionalOptions>/Zc:__cplusplus /external:templates- /external:anglebrackets %(AdditionalOptions)</AdditionalOptions>
       <ForcedIncludeFiles>warnings.hpp</ForcedIncludeFiles>
       <PrecompiledHeaderFile/>
-      <PreprocessorDefinitions>BOOST_DLL_USE_STD_FS;_WIN32_WINNT=0x0601;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BOOST_DLL_USE_STD_FS;GLOG_CUSTOM_PREFIX_SUPPORT;_WIN32_WINNT=0x0601;NOGDI;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>advapi32.lib;wtsapi32.lib;shell32.lib</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;wtsapi32.lib;shell32.lib;Shlwapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 

@@ -1,25 +1,13 @@
 #include "logging.hpp"
 
 DISABLE_ANALYSIS
-#include <boost/date_time/posix_time/posix_time_types.hpp>
-#include <boost/log/attributes/clock.hpp>
-#include <boost/log/attributes/constant.hpp>
-#include <boost/log/attributes/function.hpp>
-#include <boost/log/attributes/named_scope.hpp>
-#include <boost/log/expressions/formatters/date_time.hpp>
-#include <boost/log/expressions/formatters/format.hpp>
-#include <boost/log/expressions/formatters/max_size_decorator.hpp>
-#include <boost/log/expressions/formatters/named_scope.hpp>
-#include <boost/log/expressions/formatters/stream.hpp>
-#include <boost/log/expressions/keyword.hpp>
-#include <boost/log/support/date_time.hpp>
-#include <boost/log/utility/setup/console.hpp>
-#include <boost/log/utility/setup/file.hpp>
-#include <boost/nowide/iostream.hpp>
-#include <boost/phoenix/bind/bind_function.hpp>
-#include <boost/phoenix/operator/arithmetic.hpp>
+#include <chrono>
+#include <format>
+#include <stack>
+
 #include <boost/program_options/errors.hpp>
 #include <boost/program_options/value_semantic.hpp>
+#include <glog/logging.h>
 
 #include <windows.h>
 REENABLE_ANALYSIS
@@ -27,55 +15,38 @@ REENABLE_ANALYSIS
 #include "config.hpp"
 #include "string-maps.hpp"
 
-namespace bl = boost::log;
+static thread_local std::stack<char const*> g_scopes;
 
-BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(::GetCurrentProcessId()))
-BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(::GetCurrentThreadId()))
-BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
-
-// clang-format off
-static bl::formatter const g_formatter
-    = bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
-    % bl::expressions::format_date_time<boost::posix_time::ptime>("TimeStamp", "%Y-%m-%d %H:%M:%S")
-    % process_id
-    % thread_id
-    % severity
-    % bl::expressions::format_named_scope(
-        "Scope",
-        bl::keywords::format = "%n",
-        bl::keywords::incomplete_marker = "",
-        bl::keywords::depth = 1)
-    % bl::expressions::message
-    % bl::expressions::max_size_decor(3, "")[
-        // %f gives six digits of precision. We want three.
-        bl::expressions::stream << bl::expressions::format_date_time<boost::posix_time::ptime>(
-            "TimeStamp", "%f")
-    ];
-// clang-format on
-
-static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
+ScopeMarker::ScopeMarker(char const* name)
 {
-    return level >= config::verbosity.get();
+    g_scopes.push(name);
 }
 
+ScopeMarker::~ScopeMarker()
+{
+    g_scopes.pop();
+}
+
+void CustomPrefix(std::ostream& s, google::LogMessageInfo const& l, void*)
+{
+    auto fn = g_scopes.top();
+    s << std::format(
+        "{0:%Y-%m-%d %H:%M}:{1:02}.{2:03} [{3}:{4}] <{5}> {6}:",
+        std::chrono::system_clock::from_time_t(l.time.timestamp()), std::chrono::seconds(l.time.sec()).count(),
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::microseconds(l.time.usec())).count(),
+        GetCurrentProcessId(), l.thread_id, l.severity, fn);
+}
+
+/*
 BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
 {
-    logger_type lg;
-    lg.add_attribute("TimeStamp", bl::attributes::local_clock());
-    lg.add_attribute("ProcessId", bl::attributes::make_constant(::GetCurrentProcessId()));
-    lg.add_attribute("ThreadId", bl::attributes::make_function(&::GetCurrentThreadId));
-    lg.add_attribute("Scope", bl::attributes::named_scope());
-
-    auto const verbosity_filter = boost::phoenix::bind(&severity_filter, severity.or_none());
-
     auto const console = bl::add_console_log(boost::nowide::clog, bl::keywords::filter = verbosity_filter,
                                              bl::keywords::format = g_formatter);
     auto const file = bl::add_file_log(bl::keywords::file_name = config::log_file.get().native(),
                                        bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
                                        bl::keywords::auto_flush = true, bl::keywords::filter = verbosity_filter,
                                        bl::keywords::format = g_formatter);
-    return lg;
-}
+}*/
 
 std::ostream& operator<<(std::ostream& os, severity_level sev)
 {
