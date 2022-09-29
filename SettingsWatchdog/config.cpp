@@ -4,7 +4,7 @@ namespace config
 {
     auto constexpr config_registry_key = R"(SOFTWARE\SettingsWatchdog)";
     static std::filesystem::path const default_log_file(R"(C:\SettingsWatchdog.log)");
-    static severity_level const default_severity = severity_level::info;
+    static severity_level const default_severity = severity_level::trace;
 
     registry::value<std::filesystem::path> log_file(HKEY_LOCAL_MACHINE, config_registry_key, "log file",
                                                     default_log_file);

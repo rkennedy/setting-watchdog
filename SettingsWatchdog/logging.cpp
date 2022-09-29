@@ -2,12 +2,16 @@
 
 DISABLE_ANALYSIS
 #include <chrono>
+#include <cmath>
 #include <format>
+#include <ratio>
 #include <stack>
 
+#include <boost/nowide/convert.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 #include <boost/program_options/errors.hpp>
 #include <boost/program_options/value_semantic.hpp>
-#include <glog/logging.h>
+#include <plog/Record.h>
 
 #include <windows.h>
 REENABLE_ANALYSIS
@@ -27,30 +31,42 @@ ScopeMarker::~ScopeMarker()
     g_scopes.pop();
 }
 
-void CustomPrefix(std::ostream& s, google::LogMessageInfo const& l, void*)
+plog::util::nstring LogFormatter::header()
 {
-    auto fn = g_scopes.top();
-    s << std::format(
-        "{0:%Y-%m-%d %H:%M}:{1:02}.{2:03} [{3}:{4}] <{5}> {6}:",
-        std::chrono::system_clock::from_time_t(l.time.timestamp()), std::chrono::seconds(l.time.sec()).count(),
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::microseconds(l.time.usec())).count(),
-        GetCurrentProcessId(), l.thread_id, l.severity, fn);
+    return plog::util::nstring();
 }
 
-/*
-BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
+plog::util::nstring LogFormatter::format(plog::Record const& record)
 {
-    auto const console = bl::add_console_log(boost::nowide::clog, bl::keywords::filter = verbosity_filter,
-                                             bl::keywords::format = g_formatter);
-    auto const file = bl::add_file_log(bl::keywords::file_name = config::log_file.get().native(),
-                                       bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
-                                       bl::keywords::auto_flush = true, bl::keywords::filter = verbosity_filter,
-                                       bl::keywords::format = g_formatter);
-}*/
+    auto fn { g_scopes.top() };
+    // On Windows, std::chrono::system_clock uses a duration with a ratio of
+    // 1/100000000, which indicates how many 100-nanoseconds. When printed, it
+    // gives 7 digits after the decimal place. We only want 3 digits for
+    // millisecond precision. Therefore, we'll format the string "natively" and
+    // then truncate it to the desired length.
+    auto const time { std::chrono::system_clock::from_time_t(record.getTime().time)
+                      + std::chrono::milliseconds(record.getTime().millitm) };
+    auto const time_str = std::format(L"{:%Y-%m-%d %H:%M:%S}", time);
+    using precision_difference = std::ratio_divide<std::milli, std::chrono::system_clock::duration::period>;
+    static_assert(precision_difference::num > 1);
+    static_assert(precision_difference::den == 1);
+    auto const digit_difference
+        = boost::numeric_cast<decltype(time_str)::size_type>(std::log10(precision_difference::num));
+
+    return std::format(L"{0:.{1}} [{2}:{3}] <{4}> {5}: {6}\n", time_str, time_str.length() - digit_difference,
+                       GetCurrentProcessId(), record.getTid(),
+                       static_cast<severity_level>(static_cast<int>(record.getSeverity())), boost::nowide::widen(fn),
+                       record.getMessage());
+}
+
+std::string to_string(severity_level level)
+{
+    return get(severity_names, level).value_or(std::to_string(static_cast<int>(level)));
+}
 
 std::ostream& operator<<(std::ostream& os, severity_level sev)
 {
-    return os << get(severity_names, sev).value_or("unknown");
+    return os << to_string(sev);
 }
 
 void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int)

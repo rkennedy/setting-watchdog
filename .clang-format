@@ -61,7 +61,7 @@ IncludeBlocks: Regroup
 IncludeCategories:
 - Regex: '^<[^.]*>$'  # C++ headers first
   Priority: 1
-- Regex: '^<(boost|glog)/'  # External libraries second
+- Regex: '^<(boost|plog)/'  # External libraries second
   Priority: 2
 - Regex: '^<windows\.h>'  # Other Windows headers depend on this being first.
   Priority: 3

@@ -72,6 +72,8 @@ std::map<DWORD, std::string> const registry_types {
 
 std::map<severity_level, std::string> const severity_names {
     // clang-format off
+    { severity_level::trace, "trace" },
+    { severity_level::debug, "debug" },
     { severity_level::info, "info" },
     { severity_level::warning, "warning" },
     { severity_level::error, "error" },

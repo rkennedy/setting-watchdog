@@ -11,10 +11,7 @@
     "boost-numeric-conversion",
     "boost-program-options",
     "boost-range",
-    {
-      "name": "glog",
-      "default-features": false
-    }
+    "plog"
   ],
   "$modeline": " vim: set et sw=2 tw=2 ts=2 : "
 }
