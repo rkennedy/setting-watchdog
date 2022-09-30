@@ -19,12 +19,24 @@ REENABLE_ANALYSIS
 
 namespace registry
 {
+    /// <summary>
+    /// A trait class to teach registry::value how to convert arbitrary types
+    /// into types that are supported by the registry. Specializations shoud
+    /// provide a convert function that returns a registry-supported type.
+    /// </summary>
+    /// <typeparam name="T">The non-registry-supported type</typeparam>
     template <typename T>
     struct registry_traits
     {
         // static U convert(T const&);
     };
 
+    /// <summary>
+    /// A class representing a single value in the registry.
+    /// </summary>
+    /// <typeparam name="T">The type of the value. This can be any type, not
+    /// just those supported by the registry, so select a type that's
+    /// appropriate for the application code.</typeparam>
     template <typename T>
     class value
     {
@@ -35,19 +47,27 @@ namespace registry
         std::optional<T> mutable m_current_value;
 
     public:
+        /// <summary>
+        /// Construct a new registry value.
+        /// </summary>
+        /// <param name="key">The base registry key where the value is stored. For example, HKEY_LOCAL_MACHINE.</param>
+        /// <param name="subkey">The path to the subkey where the registry value is stored.</param>
+        /// <param name="value_name">The name of the registry value.</param>
+        /// <param name="default_value">A value to use for this registry entry if the value is not present in the
+        /// registry.</param>
         value(HKEY key, std::string const& subkey, std::string const& value_name, T const& default_value):
             m_key(key),
             m_subkey(boost::nowide::widen(subkey)),
             m_value_name(boost::nowide::widen(value_name)),
             m_default_value(default_value)
         { }
-        value(HKEY key, std::string const& subkey, std::string const& value_name, T&& default_value):
-            m_key(key),
-            m_subkey(boost::nowide::widen(subkey)),
-            m_value_name(boost::nowide::widen(value_name)),
-            m_default_value(std::forward<T>(default_value))
-        { }
 
+        /// <summary>
+        /// Store a new value in the registry. Uses registry_traits::convert if type U is not supported by the registry.
+        /// </summary>
+        /// <typeparam name="U">Any input type. It ought to be compatible with T, but that's not enforced
+        /// anywhere.</typeparam>
+        /// <param name="new_value">The value to store in the registry.</param>
         template <typename U>
         void set(U const& new_value)
         {
@@ -75,6 +95,10 @@ namespace registry
             }
         }
 
+        /// <summary>
+        /// Read the current value from the registry.
+        /// </summary>
+        /// <returns>The current registry value, if present, else m_default_value</returns>
         std::enable_if_t<std::disjunction_v<std::is_integral<T>, std::is_enum<T>, std::is_constructible<T, std::string>,
                                             std::is_constructible<T, std::wstring>>,
                          T>
@@ -162,6 +186,9 @@ namespace registry
     };
 }  // namespace registry
 
+/// <summary>
+/// A wrapper for HKEY that automatically closes itself upon destruction. Can be moved, but not copied.
+/// </summary>
 class RegKey
 {
     HKEY m_key;
@@ -170,10 +197,24 @@ class RegKey
     RegKey& operator=(RegKey const&) = delete;
 
 public:
-    RegKey(HKEY key, char const* name, DWORD permissions);
+    /// <summary>
+    /// Open a registry key.
+    /// </summary>
+    /// <param name="key">The base registry key, such as HKEY_LOCAL_MACHINE</param>
+    /// <param name="name">The path of the subkey to open</param>
+    /// <param name="permissions">Permissions required for accessing the registry key</param>
+    RegKey(HKEY key, char const* name, REGSAM permissions);
     RegKey(RegKey&& other) noexcept;
     ~RegKey();
+    /// <summary>
+    /// Use the RegKey as an ordinary HKEY value.
+    /// </summary>
     operator HKEY() const;
 };
 
+/// <summary>
+/// Delete a value from the registry.
+/// </summary>
+/// <param name="key">The key where the value is stored.</param>
+/// <param name="name">The name of the value to delete.</param>
 void DeleteRegistryValue(HKEY key, char const* name);
