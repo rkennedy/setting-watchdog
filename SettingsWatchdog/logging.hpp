@@ -1,30 +1,55 @@
 #pragma once
 DISABLE_ANALYSIS
+#include <format>
 #include <iosfwd>
 #include <string>
 #include <vector>
 
 #include <boost/any.hpp>
-#include <boost/log/sources/global_logger_storage.hpp>
-#include <boost/log/trivial.hpp>
+#include <boost/nowide/convert.hpp>
+#include <plog/Log.h>
 REENABLE_ANALYSIS
 
-enum class severity_level
+class ScopeMarker
 {
-    trace,
-    debug,
-    info,
-    warning,
-    error,
-    fatal,
+public:
+    ScopeMarker(char const* name);
+    ~ScopeMarker();
 };
 
-std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, severity_level sev);
+#define BOOST_LOG_FUNC()            \
+    ScopeMarker const CuRrEnT_ScOpE \
+    {                               \
+        __FUNCTION__                \
+    }
 
-void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int);
+namespace plog
+{
+    auto constexpr trace = verbose;
 
-using logger_type = boost::log::sources::severity_logger_mt<severity_level>;
+    std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, plog::Severity sev);
 
-BOOST_LOG_GLOBAL_LOGGER(wdlog, logger_type)
+    void validate(boost::any& v, std::vector<std::string> const& values, plog::Severity* target_type, int);
 
-#define WDLOG(sev) BOOST_LOG_SEV(wdlog::get(), (severity_level::sev))
+    std::string to_string(plog::Severity);
+}  // namespace plog
+
+template <class CharT>
+class std::formatter<plog::Severity, CharT>: public std::formatter<std::basic_string<CharT>, CharT>
+{
+public:
+    template <class FormatContext>
+    auto format(plog::Severity level, FormatContext& ctx) const
+    {
+        return std::formatter<std::basic_string<CharT>, CharT>::format(boost::nowide::widen(to_string(level)), ctx);
+    }
+};
+
+#define WDLOG(sev) LOG((plog::sev))
+
+class LogFormatter
+{
+public:
+    static plog::util::nstring header();
+    static plog::util::nstring format(plog::Record const& record);
+};

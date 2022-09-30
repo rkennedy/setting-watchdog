@@ -13,7 +13,6 @@ DISABLE_ANALYSIS
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
-#include <boost/log/attributes/named_scope.hpp>
 #include <boost/nowide/args.hpp>
 #include <boost/nowide/convert.hpp>
 #include <boost/nowide/iostream.hpp>
@@ -24,6 +23,9 @@ DISABLE_ANALYSIS
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <plog/Appenders/RollingFileAppender.h>
+#include <plog/Initializers/ConsoleInitializer.h>
+#include <plog/Log.h>
 
 #include <windows.h>
 #include <sddl.h>
@@ -550,6 +552,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 int main(int argc, char* argv[])
 {
     BOOST_LOG_FUNC();
+    auto& logger { plog::init<LogFormatter>(plog::none, plog::streamStdErr) };
     try {
         boost::nowide::args a(argc, argv);
 
@@ -560,7 +563,7 @@ int main(int argc, char* argv[])
             ("install,i", "Install the service")
             ("uninstall,u", "Uninstall the service")
             ("log-location,l", po::value<std::filesystem::path>(), "Set the location of the log file")
-            ("verbose,v", po::value<severity_level>(), "Set the verbosity level")
+            ("verbose,v", po::value<plog::Severity>(), "Set the verbosity level")
             // clang-format on
             ;
         po::variables_map vm;
@@ -571,6 +574,7 @@ int main(int argc, char* argv[])
             boost::nowide::cout << desc << std::endl;
             return EXIT_SUCCESS;
         }
+
         if (vm.contains("log-location")) {
             try {
                 config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
@@ -582,9 +586,12 @@ int main(int argc, char* argv[])
                 // We're unable to store the log location. No big deal.
             }
         }
+        static plog::RollingFileAppender<LogFormatter> file_appender(config::log_file.get().c_str());
+        logger.addAppender(&file_appender);
+
         if (vm.contains("verbose")) {
             try {
-                config::verbosity.set(vm.at("verbose").as<severity_level>());
+                config::verbosity.set(vm.at("verbose").as<plog::Severity>());
             } catch (std::system_error const& ex) {
                 std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
                 if (ex.code() != error_access_denied) {
@@ -593,6 +600,7 @@ int main(int argc, char* argv[])
                 // We're unable to store the verbosity. No big deal.
             }
         }
+        plog::get()->setMaxSeverity(config::verbosity.get());
         WDLOG(info) << std::format("Running {}", boost::nowide::narrow(boost::dll::program_location().native()));
         WDLOG(trace) << std::format("Commit {}", git_commit);
 
@@ -619,7 +627,12 @@ int main(int argc, char* argv[])
         WDLOG(error) << std::format("Error ({}) {}", ex.code(), boost::algorithm::trim_copy(std::string(ex.what())));
         return EXIT_FAILURE;
     } catch (std::exception const& ex) {
-        WDLOG(error) << std::format("Error: {}", boost::algorithm::trim_copy(std::string(ex.what())));
+        auto const msg = std::format("Error: {}", boost::algorithm::trim_copy(std::string(ex.what())));
+        try {
+            WDLOG(error) << msg;
+        } catch (std::exception const&) {
+            boost::nowide::clog << std::format("Logging failed: {}\n{}", ex.what(), msg) << std::endl;
+        }
         return EXIT_FAILURE;
     }
 }

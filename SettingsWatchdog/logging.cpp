@@ -1,25 +1,17 @@
 #include "logging.hpp"
 
 DISABLE_ANALYSIS
-#include <boost/date_time/posix_time/posix_time_types.hpp>
-#include <boost/log/attributes/clock.hpp>
-#include <boost/log/attributes/constant.hpp>
-#include <boost/log/attributes/function.hpp>
-#include <boost/log/attributes/named_scope.hpp>
-#include <boost/log/expressions/formatters/date_time.hpp>
-#include <boost/log/expressions/formatters/format.hpp>
-#include <boost/log/expressions/formatters/max_size_decorator.hpp>
-#include <boost/log/expressions/formatters/named_scope.hpp>
-#include <boost/log/expressions/formatters/stream.hpp>
-#include <boost/log/expressions/keyword.hpp>
-#include <boost/log/support/date_time.hpp>
-#include <boost/log/utility/setup/console.hpp>
-#include <boost/log/utility/setup/file.hpp>
-#include <boost/nowide/iostream.hpp>
-#include <boost/phoenix/bind/bind_function.hpp>
-#include <boost/phoenix/operator/arithmetic.hpp>
+#include <chrono>
+#include <cmath>
+#include <format>
+#include <ratio>
+#include <stack>
+
+#include <boost/nowide/convert.hpp>
+#include <boost/numeric/conversion/cast.hpp>
 #include <boost/program_options/errors.hpp>
 #include <boost/program_options/value_semantic.hpp>
+#include <plog/Record.h>
 
 #include <windows.h>
 REENABLE_ANALYSIS
@@ -27,62 +19,56 @@ REENABLE_ANALYSIS
 #include "config.hpp"
 #include "string-maps.hpp"
 
-namespace bl = boost::log;
+static thread_local std::stack<char const*> g_scopes;
 
-BOOST_LOG_ATTRIBUTE_KEYWORD(process_id, "ProcessId", decltype(::GetCurrentProcessId()))
-BOOST_LOG_ATTRIBUTE_KEYWORD(thread_id, "ThreadId", decltype(::GetCurrentThreadId()))
-BOOST_LOG_ATTRIBUTE_KEYWORD(severity, "Severity", severity_level)
-
-// clang-format off
-static bl::formatter const g_formatter
-    = bl::expressions::format("%1%.%7% [%2%:%3%] <%4%> %5%: %6%")
-    % bl::expressions::format_date_time<boost::posix_time::ptime>("TimeStamp", "%Y-%m-%d %H:%M:%S")
-    % process_id
-    % thread_id
-    % severity
-    % bl::expressions::format_named_scope(
-        "Scope",
-        bl::keywords::format = "%n",
-        bl::keywords::incomplete_marker = "",
-        bl::keywords::depth = 1)
-    % bl::expressions::message
-    % bl::expressions::max_size_decor(3, "")[
-        // %f gives six digits of precision. We want three.
-        bl::expressions::stream << bl::expressions::format_date_time<boost::posix_time::ptime>(
-            "TimeStamp", "%f")
-    ];
-// clang-format on
-
-static bool severity_filter(bl::value_ref<severity_level, tag::severity> const& level)
+ScopeMarker::ScopeMarker(char const* name)
 {
-    return level >= config::verbosity.get();
+    g_scopes.push(name);
 }
 
-BOOST_LOG_GLOBAL_LOGGER_INIT(wdlog, logger_type)
+ScopeMarker::~ScopeMarker()
 {
-    logger_type lg;
-    lg.add_attribute("TimeStamp", bl::attributes::local_clock());
-    lg.add_attribute("ProcessId", bl::attributes::make_constant(::GetCurrentProcessId()));
-    lg.add_attribute("ThreadId", bl::attributes::make_function(&::GetCurrentThreadId));
-    lg.add_attribute("Scope", bl::attributes::named_scope());
-
-    auto const verbosity_filter = boost::phoenix::bind(&severity_filter, severity.or_none());
-
-    auto const console = bl::add_console_log(boost::nowide::clog, bl::keywords::filter = verbosity_filter,
-                                             bl::keywords::format = g_formatter);
-    auto const file = bl::add_file_log(bl::keywords::file_name = config::log_file.get().native(),
-                                       bl::keywords::open_mode = std::ios_base::app | std::ios_base::out,
-                                       bl::keywords::auto_flush = true, bl::keywords::filter = verbosity_filter,
-                                       bl::keywords::format = g_formatter);
-    return lg;
+    g_scopes.pop();
 }
 
-std::ostream& operator<<(std::ostream& os, severity_level sev)
+plog::util::nstring LogFormatter::header()
 {
-    return os << get(severity_names, sev).value_or("unknown");
+    return plog::util::nstring();
 }
 
-void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int)
+plog::util::nstring LogFormatter::format(plog::Record const& record)
+{
+    auto fn { g_scopes.top() };
+    // On Windows, std::chrono::system_clock uses a duration with a ratio of
+    // 1/100000000, which indicates how many 100-nanoseconds. When printed, it
+    // gives 7 digits after the decimal place. We only want 3 digits for
+    // millisecond precision. Therefore, we'll format the string "natively" and
+    // then truncate it to the desired length.
+    auto const time { std::chrono::system_clock::from_time_t(record.getTime().time)
+                      + std::chrono::milliseconds(record.getTime().millitm) };
+    auto const time_str = std::format(L"{:%Y-%m-%d %H:%M:%S}", time);
+    using precision_difference = std::ratio_divide<std::milli, std::chrono::system_clock::duration::period>;
+    static_assert(precision_difference::num > 1);
+    static_assert(precision_difference::den == 1);
+    auto const digit_difference
+        = boost::numeric_cast<decltype(time_str)::size_type>(std::log10(precision_difference::num));
+
+    return std::format(L"{0:.{1}} [{2}:{3}] <{4}> {5}: {6}\n", time_str, time_str.length() - digit_difference,
+                       GetCurrentProcessId(), record.getTid(), record.getSeverity(), boost::nowide::widen(fn),
+                       record.getMessage());
+}
+
+std::string plog::to_string(plog::Severity level)
+{
+    return ::get(severity_names, level).value_or(std::to_string(static_cast<int>(level)));
+}
+
+std::ostream& plog::operator<<(std::ostream& os, plog::Severity sev)
+{
+    return os << to_string(sev);
+}
+
+void plog::validate(boost::any& v, std::vector<std::string> const& values, plog::Severity* target_type, int)
 {
     namespace po = boost::program_options;
 

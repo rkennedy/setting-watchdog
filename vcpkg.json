@@ -6,14 +6,12 @@
     "boost-algorithm",
     "boost-any",
     "boost-core",
-    "boost-date-time",
     "boost-dll",
-    "boost-log",
     "boost-nowide",
     "boost-numeric-conversion",
-    "boost-phoenix",
     "boost-program-options",
-    "boost-range"
+    "boost-range",
+    "plog"
   ],
-  "$modeline": "vim: set et sw=2 tw=2:"
+  "$modeline": " vim: set et sw=2 tw=2 ts=2 : "
 }
