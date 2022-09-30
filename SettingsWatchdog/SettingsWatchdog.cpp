@@ -541,66 +541,90 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
     }
 }
 
+enum class program_action
+{
+    help,
+    install,
+    uninstall,
+    run,
+};
+
+template <int instanceId>
+static program_action process_args(int argc, char* argv[], plog::Logger<instanceId>& logger)
+{
+    boost::nowide::args a(argc, argv);
+
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        // clang-format off
+        ("help,h", "This help message")
+        ("install,i", "Install the service")
+        ("uninstall,u", "Uninstall the service")
+        ("log-location,l", po::value<std::filesystem::path>(), "Set the location of the log file")
+        ("verbose,v", po::value<plog::Severity>(), "Set the verbosity level")
+        // clang-format on
+        ;
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    if (vm.contains("help")) {
+        boost::nowide::cout << desc << std::endl;
+        return program_action::help;
+    }
+
+    if (vm.contains("log-location")) {
+        try {
+            config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
+        } catch (std::system_error const& ex) {
+            if (ex.code() != errors::access_denied) {
+                throw;
+            }
+            // We're unable to store the log location. No big deal.
+        }
+    }
+    static plog::RollingFileAppender<LogFormatter> file_appender(config::log_file.get().c_str());
+    logger.addAppender(&file_appender);
+
+    if (vm.contains("verbose")) {
+        try {
+            config::verbosity.set(vm.at("verbose").as<plog::Severity>());
+        } catch (std::system_error const& ex) {
+            if (ex.code() != errors::access_denied) {
+                throw;
+            }
+            // We're unable to store the verbosity. No big deal.
+        }
+    }
+    plog::get()->setMaxSeverity(config::verbosity.get());
+
+    if (vm.contains("install"))
+        return program_action::install;
+    if (vm.contains("uninstall"))
+        return program_action::uninstall;
+    return program_action::run;
+}
+
 int main(int argc, char* argv[])
 {
     LOG_FUNC();
     auto& logger { plog::init<LogFormatter>(plog::none, plog::streamStdErr) };
     try {
-        boost::nowide::args a(argc, argv);
-
-        po::options_description desc("Allowed options");
-        desc.add_options()
-            // clang-format off
-            ("help,h", "This help message")
-            ("install,i", "Install the service")
-            ("uninstall,u", "Uninstall the service")
-            ("log-location,l", po::value<std::filesystem::path>(), "Set the location of the log file")
-            ("verbose,v", po::value<plog::Severity>(), "Set the verbosity level")
-            // clang-format on
-            ;
-        po::variables_map vm;
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-        po::notify(vm);
-
-        if (vm.contains("help")) {
-            boost::nowide::cout << desc << std::endl;
-            return EXIT_SUCCESS;
-        }
-
-        if (vm.contains("log-location")) {
-            try {
-                config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
-            } catch (std::system_error const& ex) {
-                if (ex.code() != errors::access_denied) {
-                    throw;
-                }
-                // We're unable to store the log location. No big deal.
-            }
-        }
-        static plog::RollingFileAppender<LogFormatter> file_appender(config::log_file.get().c_str());
-        logger.addAppender(&file_appender);
-
-        if (vm.contains("verbose")) {
-            try {
-                config::verbosity.set(vm.at("verbose").as<plog::Severity>());
-            } catch (std::system_error const& ex) {
-                if (ex.code() != errors::access_denied) {
-                    throw;
-                }
-                // We're unable to store the verbosity. No big deal.
-            }
-        }
-        plog::get()->setMaxSeverity(config::verbosity.get());
+        auto const desired_action = process_args(argc, argv, logger);
         WDLOG(info) << std::format("Running {}", boost::nowide::narrow(boost::dll::program_location().native()));
         WDLOG(trace) << std::format("Commit {}", git_commit);
 
-        if (vm.contains("install")) {
-            InstallService();
-            return EXIT_SUCCESS;
-        }
-        if (vm.contains("uninstall")) {
-            UninstallService();
-            return EXIT_SUCCESS;
+        switch (desired_action) {
+            case program_action::help:
+                // Help has already been printed by process_args because it has the argument descriptions.
+                return EXIT_SUCCESS;
+            case program_action::install:
+                InstallService();
+                return EXIT_SUCCESS;
+            case program_action::uninstall:
+                UninstallService();
+                return EXIT_SUCCESS;
+            default:;
         }
 
         std::wstring const service_name = boost::nowide::widen("SettingsWatchdog");
