@@ -4,6 +4,7 @@ DISABLE_ANALYSIS
 #include <functional>
 #include <map>
 #include <mutex>
+#include <ranges>
 #include <string>
 #include <system_error>
 #include <type_traits>
@@ -17,11 +18,6 @@ DISABLE_ANALYSIS
 #include <boost/nowide/iostream.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/program_options.hpp>
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/adaptor/transformed.hpp>
-#include <boost/range/algorithm/for_each.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
 #include <plog/Appenders/RollingFileAppender.h>
 #include <plog/Initializers/ConsoleInitializer.h>
 #include <plog/Log.h>
@@ -430,9 +426,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
             RemoveLoginMessage(system_key);
             RemoveAutosignonRestriction(system_key);
-            boost::for_each(context.sessions, [](std::map<DWORD, SessionData>::value_type const& item) {
-                RemoveScreenSaverPolicy(item.second.key);
-            });
+            std::ranges::for_each(context.sessions | std::views::values, RemoveScreenSaverPolicy, &SessionData::key);
 
             WDLOG(debug) << "Beginning service loop";
             bool stop_requested = false;
@@ -441,9 +435,9 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 auto const FixedWaitObjectCount = wait_handles.size();
                 {
                     logging_lock_guard session_guard(context.session_mutex, "pre-wait");
-                    boost::push_back(wait_handles,
-                                     context.sessions | boost::adaptors::map_values
-                                         | boost::adaptors::transformed(std::mem_fn(&SessionData::notification)));
+                    std::ranges::copy(
+                        context.sessions | std::views::values | std::views::transform(&SessionData::notification),
+                        std::back_inserter(wait_handles));
                 }
                 if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
                     wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
@@ -481,13 +475,13 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                         WinCheck(ResetEvent(context.SessionChange), "resetting session event");
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
                         std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
-                        boost::for_each(context.sessions | boost::adaptors::map_values
-                                            | boost::adaptors::filtered(std::mem_fn(&SessionData::new_)),
-                                        [](SessionData& session) {
-                                            // TODO Initialize new sessions
-                                            session.new_ = false;
-                                            EstablishNotification(session.key, session.notification);
-                                        });
+                        std::ranges::for_each(
+                            context.sessions | std::views::values | std::views::filter(&SessionData::new_),
+                            [](SessionData& session) {
+                                // TODO Initialize new sessions
+                                session.new_ = false;
+                                EstablishNotification(session.key, session.notification);
+                            });
                         break;
                     }
                     default: {

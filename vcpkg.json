@@ -10,7 +10,6 @@
     "boost-nowide",
     "boost-numeric-conversion",
     "boost-program-options",
-    "boost-range",
     "plog"
   ],
   "$modeline": " vim: set et sw=2 tw=2 ts=2 : "
