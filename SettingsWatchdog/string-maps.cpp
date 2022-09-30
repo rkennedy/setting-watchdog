@@ -70,13 +70,13 @@ std::map<DWORD, std::string> const registry_types {
     // clang-format on
 };
 
-std::map<severity_level, std::string> const severity_names {
+std::map<plog::Severity, std::string> const severity_names {
     // clang-format off
-    { severity_level::trace, "trace" },
-    { severity_level::debug, "debug" },
-    { severity_level::info, "info" },
-    { severity_level::warning, "warning" },
-    { severity_level::error, "error" },
-    { severity_level::fatal, "fatal" },
+    { plog::trace, "trace" },
+    { plog::debug, "debug" },
+    { plog::info, "info" },
+    { plog::warning, "warning" },
+    { plog::error, "error" },
+    { plog::fatal, "fatal" },
     // clang-format on
 };

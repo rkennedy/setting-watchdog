@@ -23,34 +23,29 @@ public:
         __FUNCTION__                \
     }
 
-enum class severity_level
+namespace plog
 {
-    trace = plog::verbose,
-    debug = plog::debug,
-    info = plog::info,
-    warning = plog::warning,
-    error = plog::error,
-    fatal = plog::fatal,
-};
+    auto constexpr trace = verbose;
 
-std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, severity_level sev);
+    std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, plog::Severity sev);
 
-void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int);
+    void validate(boost::any& v, std::vector<std::string> const& values, plog::Severity* target_type, int);
 
-std::string to_string(severity_level);
+    std::string to_string(plog::Severity);
+}  // namespace plog
 
 template <class CharT>
-class std::formatter<severity_level, CharT>: public std::formatter<std::basic_string<CharT>, CharT>
+class std::formatter<plog::Severity, CharT>: public std::formatter<std::basic_string<CharT>, CharT>
 {
 public:
     template <class FormatContext>
-    auto format(severity_level level, FormatContext& ctx) const
+    auto format(plog::Severity level, FormatContext& ctx) const
     {
         return std::formatter<std::basic_string<CharT>, CharT>::format(boost::nowide::widen(to_string(level)), ctx);
     }
 };
 
-#define WDLOG(sev) LOG(static_cast<plog::Severity>((severity_level::sev)))
+#define WDLOG(sev) LOG((plog::sev))
 
 class LogFormatter
 {

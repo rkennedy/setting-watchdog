@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <boost/range/algorithm/find_if.hpp>
+#include <plog/Severity.h>
 
 #include <windows.h>
 
@@ -19,7 +20,7 @@ extern std::map<DWORD, std::string> const wait_results;
 
 extern std::map<DWORD, std::string> const registry_types;
 
-extern std::map<severity_level, std::string> const severity_names;
+extern std::map<plog::Severity, std::string> const severity_names;
 
 template <typename Map, typename T>
 std::optional<typename Map::mapped_type> get(Map const& map, T&& key)

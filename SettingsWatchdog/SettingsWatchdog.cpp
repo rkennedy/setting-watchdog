@@ -563,7 +563,7 @@ int main(int argc, char* argv[])
             ("install,i", "Install the service")
             ("uninstall,u", "Uninstall the service")
             ("log-location,l", po::value<std::filesystem::path>(), "Set the location of the log file")
-            ("verbose,v", po::value<severity_level>(), "Set the verbosity level")
+            ("verbose,v", po::value<plog::Severity>(), "Set the verbosity level")
             // clang-format on
             ;
         po::variables_map vm;
@@ -591,7 +591,7 @@ int main(int argc, char* argv[])
 
         if (vm.contains("verbose")) {
             try {
-                config::verbosity.set(vm.at("verbose").as<severity_level>());
+                config::verbosity.set(vm.at("verbose").as<plog::Severity>());
             } catch (std::system_error const& ex) {
                 std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
                 if (ex.code() != error_access_denied) {
@@ -600,7 +600,7 @@ int main(int argc, char* argv[])
                 // We're unable to store the verbosity. No big deal.
             }
         }
-        plog::get()->setMaxSeverity(static_cast<plog::Severity>(config::verbosity.get()));
+        plog::get()->setMaxSeverity(config::verbosity.get());
         WDLOG(info) << std::format("Running {}", boost::nowide::narrow(boost::dll::program_location().native()));
         WDLOG(trace) << std::format("Commit {}", git_commit);
 

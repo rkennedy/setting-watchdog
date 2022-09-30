@@ -54,22 +54,21 @@ plog::util::nstring LogFormatter::format(plog::Record const& record)
         = boost::numeric_cast<decltype(time_str)::size_type>(std::log10(precision_difference::num));
 
     return std::format(L"{0:.{1}} [{2}:{3}] <{4}> {5}: {6}\n", time_str, time_str.length() - digit_difference,
-                       GetCurrentProcessId(), record.getTid(),
-                       static_cast<severity_level>(static_cast<int>(record.getSeverity())), boost::nowide::widen(fn),
+                       GetCurrentProcessId(), record.getTid(), record.getSeverity(), boost::nowide::widen(fn),
                        record.getMessage());
 }
 
-std::string to_string(severity_level level)
+std::string plog::to_string(plog::Severity level)
 {
-    return get(severity_names, level).value_or(std::to_string(static_cast<int>(level)));
+    return ::get(severity_names, level).value_or(std::to_string(static_cast<int>(level)));
 }
 
-std::ostream& operator<<(std::ostream& os, severity_level sev)
+std::ostream& plog::operator<<(std::ostream& os, plog::Severity sev)
 {
     return os << to_string(sev);
 }
 
-void validate(boost::any& v, std::vector<std::string> const& values, severity_level* target_type, int)
+void plog::validate(boost::any& v, std::vector<std::string> const& values, plog::Severity* target_type, int)
 {
     namespace po = boost::program_options;
 
