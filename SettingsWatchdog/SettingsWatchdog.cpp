@@ -69,7 +69,7 @@ using LocalString = AutoFreeString<[](void* arg) { LocalFree(arg); }>;
 
 void InstallService()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
     auto const self_path = boost::dll::program_location();
     WDLOG(trace) << std::format("Current file name is {}", boost::nowide::narrow(self_path.native()));
@@ -87,7 +87,7 @@ void InstallService()
 
 void UninstallService()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CONNECT);
     ServiceHandle const service(handle, "SettingsWatchdog", DELETE);
     WDLOG(trace) << "Service opened";
@@ -147,7 +147,7 @@ struct std::formatter<PSID, CharT>: std::formatter<char const*, CharT>
     template <class FormatContext>
     auto format(PSID sid, FormatContext& ctx) const
     {
-        BOOST_LOG_FUNC();
+        LOG_FUNC();
         LocalString value;
         WinCheck(ConvertSidToStringSidW(sid, &value), "converting string sid");
         return std::formatter<char const*, CharT>::format(static_cast<char const*>(value), ctx);
@@ -160,7 +160,7 @@ struct std::formatter<std::error_code, CharT>: std::formatter<std::string, CharT
     template <class FormatContext>
     auto format(std::error_code code, FormatContext& ctx) const
     {
-        BOOST_LOG_FUNC();
+        LOG_FUNC();
         std::ostringstream os;
         os << code;
         return std::formatter<std::string, CharT>::format(os.str(), ctx);
@@ -186,7 +186,7 @@ struct logging_lock_guard
 
 void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     WDLOG(trace) << std::format("adding session ID {}", dwSessionId);
 #ifndef BOOST_ASSERT_IS_VOID
     {
@@ -240,7 +240,7 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
 
 DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     auto const context = static_cast<ServiceContext<SettingsWatchdogContext>*>(lpContext);
 
     WDLOG(trace) << std::format("Service control {} ({})", dwControl,
@@ -304,21 +304,21 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
 
 void RemoveLoginMessage(HKEY key)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     DeleteRegistryValue(key, "LegalNoticeText");
     DeleteRegistryValue(key, "LegalNoticeCaption");
 }
 
 void RemoveAutosignonRestriction(HKEY key)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     DeleteRegistryValue(key, "DisableAutomaticRestartSignOn");
     DeleteRegistryValue(key, "DontDisplayLastUserName");
 }
 
 void RemoveScreenSaverPolicy(HKEY key)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     DeleteRegistryValue(key, "ScreenSaveActive");
     DeleteRegistryValue(key, "ScreenSaverIsSecure");
     DeleteRegistryValue(key, "ScreenSaverTimeOut");
@@ -327,7 +327,7 @@ void RemoveScreenSaverPolicy(HKEY key)
 
 void EstablishNotification(HKEY key, Event const& NotifyEvent)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     WDLOG(debug) << "Establishing notification";
     WinCheck(ResetEvent(NotifyEvent), "resetting event");
     RegCheck(RegNotifyChangeKeyValue(key, true, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, NotifyEvent, true),
@@ -337,7 +337,7 @@ void EstablishNotification(HKEY key, Event const& NotifyEvent)
 
 bool PrepareNextIteration()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     WDLOG(debug) << "Looping again";
     return true;
 }
@@ -359,7 +359,7 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
 
 void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     try {
         WDLOG(debug) << "Establishing service context";
         ServiceContext<SettingsWatchdogContext> context("SettingsWatchdog", ServiceHandler);
@@ -543,7 +543,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
 int main(int argc, char* argv[])
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     auto& logger { plog::init<LogFormatter>(plog::none, plog::streamStdErr) };
     try {
         boost::nowide::args a(argc, argv);
