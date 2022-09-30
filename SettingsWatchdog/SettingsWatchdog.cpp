@@ -208,8 +208,7 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
         // Get SID of session
         WinCheck(WTSQueryUserToken(dwSessionId, &session_token), "getting session token");
     } catch (std::system_error const& ex) {
-        std::error_code const error_no_token(ERROR_NO_TOKEN, std::system_category());
-        if (ex.code() == error_no_token) {
+        if (ex.code() == errors::no_token) {
             WDLOG(info) << "no token for session";
             return;
         }
@@ -572,8 +571,7 @@ int main(int argc, char* argv[])
             try {
                 config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
             } catch (std::system_error const& ex) {
-                std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
-                if (ex.code() != error_access_denied) {
+                if (ex.code() != errors::access_denied) {
                     throw;
                 }
                 // We're unable to store the log location. No big deal.
@@ -586,8 +584,7 @@ int main(int argc, char* argv[])
             try {
                 config::verbosity.set(vm.at("verbose").as<plog::Severity>());
             } catch (std::system_error const& ex) {
-                std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
-                if (ex.code() != error_access_denied) {
+                if (ex.code() != errors::access_denied) {
                     throw;
                 }
                 // We're unable to store the verbosity. No big deal.
