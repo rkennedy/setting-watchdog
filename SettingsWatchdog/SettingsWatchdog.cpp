@@ -427,7 +427,7 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             WinCheck(WTSEnumerateSessionsEx(WTS_CURRENT_SERVER_HANDLE, &level, 0, &raw_session_info, &session_count),
                      "getting session list");
 #pragma warning(pop)
-            std::shared_ptr<WTS_SESSION_INFO_1> session_info(raw_session_info, [&session_count](void* info) {
+            std::shared_ptr<WTS_SESSION_INFO_1[]> session_info(raw_session_info, [&session_count](void* info) {
                 WTSFreeMemoryEx(WTSTypeSessionInfoLevel1, info, session_count);
             });
             std::for_each_n(session_info.get(), session_count, [&context](WTS_SESSION_INFO_1 const& info) {
