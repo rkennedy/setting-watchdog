@@ -179,6 +179,16 @@ struct logging_lock_guard
     }
 };
 
+static std::string get_session_user_name(DWORD dwSessionId)
+{
+    WTSString name_buffer;
+    DWORD name_buffer_bytes;
+    WinCheck(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer,
+                                         &name_buffer_bytes),
+             "getting session user name");
+    return std::string { name_buffer };
+}
+
 static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
 {
     LOG_FUNC();
@@ -191,12 +201,8 @@ static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContex
 #endif
 
     // Get session user name
-    WTSString name_buffer;
-    DWORD name_buffer_bytes;
-    WinCheck(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer,
-                                         &name_buffer_bytes),
-             "getting session user name");
-    WDLOG(trace) << std::format("user for session is {}", name_buffer);
+    std::string const user_name { get_session_user_name(dwSessionId) };
+    WDLOG(trace) << std::format("user for session is {}", user_name);
 
     AutoCloseHandle session_token;
     try {
@@ -220,13 +226,13 @@ static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContex
     auto const token_user = reinterpret_cast<TOKEN_USER*>(group_buffer.data());
 
     try {
-        WDLOG(trace) << std::format("session sid {} ({})", token_user->User.Sid, name_buffer);
+        WDLOG(trace) << std::format("session sid {} ({})", token_user->User.Sid, user_name);
         RegKey key(HKEY_USERS, std::format(R"({}\{})", token_user->User.Sid, DesktopPolicyKey).c_str(),
                    KEY_NOTIFY | KEY_SET_VALUE);
 
         logging_lock_guard session_guard(context->session_mutex, "emplacement");
         context->sessions.emplace(std::piecewise_construct, std::forward_as_tuple(dwSessionId),
-                                  std::forward_as_tuple(std::move(key), std::string(name_buffer)));
+                                  std::forward_as_tuple(std::move(key), user_name));
         SetEvent(context->SessionChange);
     } catch (std::system_error const&) {
         WDLOG(warning) << std::format("no registry key for sid {}", token_user->User.Sid);
