@@ -8,27 +8,21 @@
 
 #include "registry.hpp"
 
-namespace registry
+// Specialization to allow std::filesystem::path values to be stored and
+// loaded in the registry.
+template <>
+struct registry::registry_traits<std::filesystem::path>
 {
-    template <>
-    struct registry_traits<std::filesystem::path>
+    static std::wstring genericize(std::filesystem::path const& p)
     {
-        /// <summary>
-        /// Converts a std::filesystem::path into a value that's supported in the registry.
-        /// </summary>
-        /// <param name="p">The path to convert</param>
-        /// <returns>A std::wstring equivalent of the path</returns>
-        static std::wstring genericize(std::filesystem::path const& p)
-        {
-            return p.native();
-        }
+        return p.native();
+    }
 
-        static std::filesystem::path specialize(std::wstring const& w)
-        {
-            return boost::nowide::narrow(w);
-        }
-    };
-}  // namespace registry
+    static std::filesystem::path specialize(std::wstring const& w)
+    {
+        return boost::nowide::narrow(w);
+    }
+};
 
 namespace config
 {
