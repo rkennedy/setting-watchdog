@@ -18,9 +18,14 @@ namespace registry
         /// </summary>
         /// <param name="p">The path to convert</param>
         /// <returns>A std::wstring equivalent of the path</returns>
-        static std::wstring convert(std::filesystem::path const& p)
+        static std::wstring genericize(std::filesystem::path const& p)
         {
             return p.native();
+        }
+
+        static std::filesystem::path specialize(std::wstring const& w)
+        {
+            return boost::nowide::narrow(w);
         }
     };
 }  // namespace registry

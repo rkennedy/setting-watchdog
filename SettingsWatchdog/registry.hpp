@@ -25,10 +25,67 @@ namespace registry
     /// provide a convert function that returns a registry-supported type.
     /// </summary>
     /// <typeparam name="T">The non-registry-supported type</typeparam>
-    template <typename T>
+    template <typename T, typename = void>
     struct registry_traits
     {
-        // static U convert(T const&);
+        /// genericize converts a value of type T into a registry-supported type.
+        // static U genericize(T const&);
+        // static T specialize(U const&);
+    };
+
+    /// <summary>
+    /// The specialization of registry_traits to handle all built-in registry types.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    template <typename T>
+    struct registry_traits<
+        T,
+        typename std::enable_if_t<
+            std::disjunction_v<std::is_same<T, DWORD>, std::is_same<T, int64_t>, std::is_same<T, std::wstring>>, void>>
+    {
+        static T genericize(T&& v)
+        {
+            return std::move(v);
+        }
+        static T specialize(T&& v)
+        {
+            return std::move(v);
+        }
+    };
+
+    template <typename E>
+    struct registry_traits<E, typename std::enable_if_t<std::is_enum_v<E>, void>>
+    {
+        using generic_type = std::conditional_t<sizeof E <= sizeof DWORD, DWORD, int64_t>;
+        static generic_type genericize(E const v)
+        {
+            return static_cast<generic_type>(v);
+        }
+        static E specialize(int64_t const v)
+        {
+            return static_cast<E>(v);
+        }
+    };
+
+    template <typename T>
+    concept registry_supported = std::is_invocable<decltype(registry_traits<T>::specialize), std::wstring>::value
+                                 || std::is_invocable<decltype(registry_traits<T>::specialize), int64_t>::value;
+
+    class value_base
+    {
+    protected:
+        value_base(HKEY key, std::string const& subkey, std::string const& value_name);
+        HKEY const m_key;
+        std::wstring const m_subkey;
+        std::wstring const m_value_name;
+
+        void store(std::wstring const&);
+        void store(DWORD const);
+        void store(int64_t const);
+
+        std::wstring load_string(DWORD data_size) const;
+        DWORD load_dword(DWORD data_size) const;
+        int64_t load_qword(DWORD data_size) const;
     };
 
     /// <summary>
@@ -37,12 +94,9 @@ namespace registry
     /// <typeparam name="T">The type of the value. This can be any type, not
     /// just those supported by the registry, so select a type that's
     /// appropriate for the application code.</typeparam>
-    template <typename T>
-    class value
+    template <registry_supported T>
+    class value: protected value_base
     {
-        HKEY const m_key;
-        std::wstring const m_subkey;
-        std::wstring const m_value_name;
         T const m_default_value;
         std::optional<T> mutable m_current_value;
 
@@ -56,9 +110,7 @@ namespace registry
         /// <param name="default_value">A value to use for this registry entry if the value is not present in the
         /// registry.</param>
         value(HKEY key, std::string const& subkey, std::string const& value_name, T const& default_value):
-            m_key(key),
-            m_subkey(boost::nowide::widen(subkey)),
-            m_value_name(boost::nowide::widen(value_name)),
+            value_base(key, subkey, value_name),
             m_default_value(default_value)
         { }
 
@@ -68,41 +120,17 @@ namespace registry
         /// <typeparam name="U">Any input type. It ought to be compatible with T, but that's not enforced
         /// anywhere.</typeparam>
         /// <param name="new_value">The value to store in the registry.</param>
-        template <typename U>
-        void set(U const& new_value)
+        void set(T const& new_value)
         {
-            if constexpr (std::disjunction_v<std::is_integral<T>, std::is_enum<T>>) {
-                m_current_value = new_value;
-                using store_type = std::conditional_t<sizeof new_value <= sizeof(DWORD), DWORD, int64_t>;
-                store_type const store_value = static_cast<store_type>(new_value);
-                static_assert(sizeof store_value >= sizeof new_value);
-                DWORD const type
-                    = std::conditional_t<sizeof new_value <= sizeof(DWORD), std::integral_constant<DWORD, REG_DWORD>,
-                                         std::integral_constant<DWORD, REG_QWORD>>::value;
-                RegCheck(RegSetKeyValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), type,
-                                         reinterpret_cast<BYTE const*>(&store_value), sizeof store_value),
-                         "storing int value");
-            } else if constexpr (std::is_same_v<U, std::string>) {
-                set(boost::nowide::widen(new_value));
-            } else if constexpr (std::is_same_v<U, std::wstring>) {
-                m_current_value = new_value;
-                RegCheck(RegSetKeyValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), REG_SZ,
-                                         reinterpret_cast<BYTE const*>(new_value.data()),
-                                         boost::numeric_cast<DWORD>((new_value.size() + 1) * sizeof(wchar_t))),
-                         "storing string value");
-            } else {
-                set(registry_traits<U>::convert(new_value));
-            }
+            m_current_value = new_value;
+            store(registry_traits<T>::genericize(new_value));
         }
 
         /// <summary>
         /// Read the current value from the registry.
         /// </summary>
         /// <returns>The current registry value, if present, else m_default_value</returns>
-        std::enable_if_t<std::disjunction_v<std::is_integral<T>, std::is_enum<T>, std::is_constructible<T, std::string>,
-                                            std::is_constructible<T, std::wstring>>,
-                         T>
-        get() const
+        T get() const
         {
             DWORD constexpr acceptible_types
                 = std::conditional_t<std::disjunction_v<std::is_integral<T>, std::is_enum<T>>,
@@ -120,59 +148,27 @@ namespace registry
                 case ERROR_FILE_NOT_FOUND:
                     break;
                 case ERROR_SUCCESS:
-                    if constexpr (std::disjunction_v<std::is_integral<T>, std::is_enum<T>>) {
+                    if constexpr (std::is_invocable<decltype(registry_traits<T>::specialize), int64_t>::value) {
                         switch (type) {
-                            case REG_DWORD: {
-                                DWORD result;
-                                BOOST_ASSERT(data_size == sizeof result);
-                                data_size = sizeof result;
-                                RegCheck(RegGetValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), RRF_RT_REG_DWORD,
-                                                      nullptr, &result, &data_size),
-                                         "reading dword value");
-                                T const final_result = boost::numeric_cast<T>(result);
-                                m_current_value = final_result;
-                                return final_result;
-                            }
+                            case REG_DWORD:
                             case REG_QWORD: {
-                                int64_t result;
-                                BOOST_ASSERT(data_size == sizeof result);
-                                data_size = sizeof result;
-                                RegCheck(RegGetValueW(m_key, m_subkey.c_str(), m_value_name.c_str(), RRF_RT_REG_QWORD,
-                                                      nullptr, &result, &data_size),
-                                         "reading qword value");
-                                T const final_result = boost::numeric_cast<T>(result);
-                                m_current_value = final_result;
-                                return final_result;
+                                int64_t const generic_result
+                                    = type == REG_DWORD ? load_dword(data_size) : load_qword(data_size);
+                                m_current_value = registry_traits<T>::specialize(generic_result);
+                                return m_current_value.value();
                             }
                             default:
                                 throw std::domain_error(
                                     std::format("unsupported registry type {}",
                                                 ::get(registry_types, type).value_or(std::to_string(type))));
                         }
-                    } else if constexpr (std::disjunction_v<std::is_constructible<T, std::string>,
-                                                            std::is_constructible<T, std::wstring>>) {
-                        DWORD type;
-                        DWORD data_size = 0;
-                        RegCheck(RegGetValueW(m_key, m_subkey.c_str(), m_value_name.c_str(),
-                                              RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, &type, nullptr, &data_size),
-                                 "checking value size");
+                    } else {
                         switch (type) {
                             case REG_EXPAND_SZ:
                             case REG_SZ: {
-                                std::vector<unsigned char> buffer(data_size);
-                                RegCheck(RegGetValueW(m_key, m_subkey.c_str(), m_value_name.c_str(),
-                                                      RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, nullptr, buffer.data(),
-                                                      &data_size),
-                                         "reading string value");
-                                std::wstring const result(reinterpret_cast<wchar_t const*>(buffer.data()),
-                                                          data_size / sizeof(wchar_t) - 1);
-                                if constexpr (!std::is_constructible_v<T, std::wstring>) {
-                                    return boost::nowide::narrow(result);
-                                }
-                                std::wstring const final_result(reinterpret_cast<wchar_t const*>(buffer.data()),
-                                                                data_size / sizeof(wchar_t) - 1);
-                                m_current_value = final_result;
-                                return final_result;
+                                std::wstring const generic_result = load_string(data_size);
+                                m_current_value = registry_traits<T>::specialize(generic_result);
+                                return m_current_value.value();
                             }
                             default:
                                 throw std::domain_error(
