@@ -462,7 +462,6 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             bool stop_requested = false;
             do {
                 std::vector<HANDLE> wait_handles { system_notify_event, context.StopEvent, context.SessionChange };
-                auto const FixedWaitObjectCount = wait_handles.size();
                 {
                     logging_lock_guard session_guard(context.session_mutex, "pre-wait");
                     std::ranges::copy(
@@ -509,7 +508,11 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
                         logging_lock_guard session_guard(context.session_mutex, "session-list change");
 
-                        // Remove any sessions that we've received log-off events for.
+                        // Remove any sessions that we've received log-off events for. It's important that this happen
+                        // here in the main service thread because it's the same thread that handles registry-change
+                        // events below. We mustn't remove items from the session map while we're waiting for
+                        // registry-change events because the code below searches the session map for the triggering
+                        // registry-change event handle to determine which session's registry changed.
                         std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
 
                         // Begin watching for changes to any sessions we've received log-on event for.
@@ -523,13 +526,18 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
                     }
                     default: {
                         if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
-                            auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
+                            // We cannot trust that context.sessions hasn't changed since wait_handles was initialized
+                            // above. We might call add_session. That means that the index of the triggered event in
+                            // wait_handles doesn't necessarily match with the index of the sessions we'd get by
+                            // enumerating the map here. Instead, we'll look for the event handle.
+                            HANDLE const triggering_event = wait_handles[WaitResult - WAIT_OBJECT_0];
                             logging_lock_guard session_guard(context.session_mutex, "session key change");
-                            if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
-                                break;
-                            }
-                            auto const session_it = std::next(context.sessions.begin(), session_index);
-                            auto const& session = session_it->second;
+                            auto const session_it = std::ranges::find(context.sessions | std::views::values,
+                                                                      triggering_event, &SessionData::notification);
+                            // The session map hasn't had any items removed from it since wait_handles was initialized,
+                            // so we're guaranteed to find triggering_event in the map. There's no need to check whether
+                            // the iterator is valid. (And there's no easy way to check it anyway.)
+                            auto const& session = *session_it;
                             WDLOG(trace) << std::format("Session registry changed for {}", session.username);
 
                             // Do session-related updates.
