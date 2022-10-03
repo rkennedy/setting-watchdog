@@ -162,20 +162,26 @@ struct std::formatter<std::error_code, CharT>: std::formatter<std::string, CharT
     }
 };
 
+// A lock that logs its label prior to acquiring or releasing its lock
 struct logging_lock_guard
 {
-    std::string label;
-    std::lock_guard<std::mutex> guard;
+private:
+    std::string m_label;
+    std::lock_guard<std::mutex> m_guard;
+
+public:
     logging_lock_guard(std::mutex& m, std::string const& label):
-        label(([](std::string const& l) {
+        m_label(([](std::string const& l) {
+            // The lock gets acquired by creating `guard`, so we use this function to log the message during the
+            // construction of `label` instead of after `guard` is already locked.
             WDLOG(debug) << std::format("locking {}", l);
             return l;
         })(label)),
-        guard(m)
+        m_guard(m)
     { }
     ~logging_lock_guard()
     {
-        WDLOG(debug) << std::format("unlocked {}", label);
+        WDLOG(debug) << std::format("unlocked {}", m_label);
     }
 };
 
