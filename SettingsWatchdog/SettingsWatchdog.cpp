@@ -32,9 +32,9 @@ REENABLE_ANALYSIS
 #include "registry.hpp"
 #include "string-maps.hpp"
 
-auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)";
-auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
-DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
+static auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)";
+static auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
+static DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
 template <void (*FREE)(void*)>
 class AutoFreeString: private boost::noncopyable
@@ -62,7 +62,7 @@ public:
 using WTSString = AutoFreeString<[](void* arg) { WTSFreeMemory(arg); }>;
 using LocalString = AutoFreeString<[](void* arg) { LocalFree(arg); }>;
 
-void InstallService()
+static void InstallService()
 {
     LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
@@ -80,7 +80,7 @@ void InstallService()
     WDLOG(trace) << "Service configured";
 }
 
-void UninstallService()
+static void UninstallService()
 {
     LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CONNECT);
@@ -179,7 +179,7 @@ struct logging_lock_guard
     }
 };
 
-void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
+static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
 {
     LOG_FUNC();
     WDLOG(trace) << std::format("adding session ID {}", dwSessionId);
@@ -233,7 +233,8 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
     }
 }
 
-DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
+// Callback for handling events on a Windows service.
+static DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
 {
     LOG_FUNC();
     auto const context = static_cast<ServiceContext<SettingsWatchdogContext>*>(lpContext);
@@ -297,21 +298,21 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
     }
 }
 
-void RemoveLoginMessage(HKEY key)
+static void RemoveLoginMessage(HKEY key)
 {
     LOG_FUNC();
     DeleteRegistryValue(key, "LegalNoticeText");
     DeleteRegistryValue(key, "LegalNoticeCaption");
 }
 
-void RemoveAutosignonRestriction(HKEY key)
+static void RemoveAutosignonRestriction(HKEY key)
 {
     LOG_FUNC();
     DeleteRegistryValue(key, "DisableAutomaticRestartSignOn");
     DeleteRegistryValue(key, "DontDisplayLastUserName");
 }
 
-void RemoveScreenSaverPolicy(HKEY key)
+static void RemoveScreenSaverPolicy(HKEY key)
 {
     LOG_FUNC();
     DeleteRegistryValue(key, "ScreenSaveActive");
@@ -320,7 +321,8 @@ void RemoveScreenSaverPolicy(HKEY key)
     DeleteRegistryValue(key, "ScrnSave.exe");
 }
 
-void EstablishNotification(HKEY key, Event const& NotifyEvent)
+// Tell the OS to set the event when there are changes to the given registry key.
+static void EstablishNotification(HKEY key, Event const& NotifyEvent)
 {
     LOG_FUNC();
     WDLOG(debug) << "Establishing notification";
@@ -330,7 +332,7 @@ void EstablishNotification(HKEY key, Event const& NotifyEvent)
     WDLOG(debug) << "Established notification";
 }
 
-bool PrepareNextIteration()
+static bool PrepareNextIteration()
 {
     LOG_FUNC();
     WDLOG(debug) << "Looping again";
@@ -338,13 +340,13 @@ bool PrepareNextIteration()
 }
 
 template <typename T>
-bool check_range(T const& min, T const& max, T const& value)
+static bool check_range(T const& min, T const& max, T const& value)
 {
     return min <= value && value < max;
 }
 
 template <typename T>
-bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
+static bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
 {
     if (check_range(min, max, value)) [[likely]]
         return true;
@@ -352,7 +354,8 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
     return false;
 }
 
-void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
+// The main entrypoint of the service. When this function returns, the service has terminated.
+static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
     LOG_FUNC();
     try {
