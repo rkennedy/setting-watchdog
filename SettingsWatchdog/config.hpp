@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 
+#include <plog/Log.h>
 #include <plog/Severity.h>
 
 #include "logging.hpp"
@@ -42,4 +43,14 @@ namespace config
     /// verbosity lower than this value will not be logged.
     /// </summary>
     extern registry::value<plog::Severity> verbosity;
+
+    enum class program_action
+    {
+        help,
+        install,
+        uninstall,
+        run,
+    };
+
+    program_action process_args(int argc, char* argv[], plog::Logger<0>& logger);
 }  // namespace config
