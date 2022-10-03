@@ -6,7 +6,6 @@
 #include <plog/Log.h>
 #include <plog/Severity.h>
 
-#include "logging.hpp"
 #include "registry.hpp"
 
 namespace registry
