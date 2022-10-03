@@ -70,7 +70,7 @@ static void InstallService()
     WDLOG(trace) << std::format("Current file name is {}", boost::nowide::narrow(self_path.native()));
 
     ServiceHandle const service(handle, "SettingsWatchdog", "Settings Watchdog", ServiceType, SERVICE_AUTO_START,
-                                self_path.c_str());
+                                self_path);
     WDLOG(info) << "Service created";
 
     std::wstring const description_string
