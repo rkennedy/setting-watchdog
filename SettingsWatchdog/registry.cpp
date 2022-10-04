@@ -15,26 +15,26 @@ static HKEY OpenRegKey(HKEY hKey, char const* lpSubKey, DWORD ulOptions, REGSAM 
     return result;
 }
 
-RegKey::RegKey(HKEY key, char const* name, DWORD permissions): m_key(OpenRegKey(key, name, 0, permissions))
+registry::key::key(HKEY key, char const* name, DWORD permissions): m_key(OpenRegKey(key, name, 0, permissions))
 { }
 
-RegKey::RegKey(RegKey&& other) noexcept: m_key(other.m_key)
+registry::key::key(key&& other) noexcept: m_key(other.m_key)
 {
     other.m_key = NULL;
 }
 
-RegKey::~RegKey()
+registry::key::~key()
 {
     if (m_key) [[likely]]
         RegCloseKey(m_key);
 }
 
-RegKey::operator HKEY() const
+registry::key::operator HKEY() const
 {
     return m_key;
 }
 
-void DeleteRegistryValue(HKEY key, char const* name)
+void registry::delete_value(HKEY key, char const* name)
 {
     switch (LONG const result = RegDeleteValueW(key, boost::nowide::widen(name).c_str()); result) {
         case ERROR_SUCCESS:

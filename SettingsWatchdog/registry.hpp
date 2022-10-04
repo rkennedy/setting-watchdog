@@ -180,37 +180,37 @@ namespace registry
             return m_current_value.value_or(m_default_value);
         }
     };
+
+    /// <summary>
+    /// A wrapper for HKEY that automatically closes itself upon destruction. Can be moved, but not copied.
+    /// </summary>
+    class key
+    {
+        HKEY m_key;
+        key() = delete;
+        key(key const&) = delete;
+        key& operator=(key const&) = delete;
+
+    public:
+        /// <summary>
+        /// Open a registry key.
+        /// </summary>
+        /// <param name="key">The base registry key, such as HKEY_LOCAL_MACHINE</param>
+        /// <param name="name">The path of the subkey to open</param>
+        /// <param name="permissions">Permissions required for accessing the registry key</param>
+        key(HKEY key, char const* name, REGSAM permissions);
+        key(key&& other) noexcept;
+        ~key();
+        /// <summary>
+        /// Use the key as an ordinary HKEY value.
+        /// </summary>
+        operator HKEY() const;
+    };
+
+    /// <summary>
+    /// Delete a value from the registry.
+    /// </summary>
+    /// <param name="key">The key where the value is stored.</param>
+    /// <param name="name">The name of the value to delete.</param>
+    void delete_value(HKEY key, char const* name);
 }  // namespace registry
-
-/// <summary>
-/// A wrapper for HKEY that automatically closes itself upon destruction. Can be moved, but not copied.
-/// </summary>
-class RegKey
-{
-    HKEY m_key;
-    RegKey() = delete;
-    RegKey(RegKey const&) = delete;
-    RegKey& operator=(RegKey const&) = delete;
-
-public:
-    /// <summary>
-    /// Open a registry key.
-    /// </summary>
-    /// <param name="key">The base registry key, such as HKEY_LOCAL_MACHINE</param>
-    /// <param name="name">The path of the subkey to open</param>
-    /// <param name="permissions">Permissions required for accessing the registry key</param>
-    RegKey(HKEY key, char const* name, REGSAM permissions);
-    RegKey(RegKey&& other) noexcept;
-    ~RegKey();
-    /// <summary>
-    /// Use the RegKey as an ordinary HKEY value.
-    /// </summary>
-    operator HKEY() const;
-};
-
-/// <summary>
-/// Delete a value from the registry.
-/// </summary>
-/// <param name="key">The key where the value is stored.</param>
-/// <param name="name">The name of the value to delete.</param>
-void DeleteRegistryValue(HKEY key, char const* name);

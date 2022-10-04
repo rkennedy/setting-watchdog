@@ -70,10 +70,10 @@ struct SessionData: private boost::noncopyable
     bool new_;
     bool running;
     Event notification;
-    RegKey const key;
+    registry::key const key;
     std::string const username;
 
-    SessionData(RegKey&& key, std::string const& username):
+    SessionData(registry::key&& key, std::string const& username):
         new_(true),
         running(true),
         notification(),
@@ -220,8 +220,8 @@ static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContex
 
     try {
         WDLOG(trace) << std::format("session sid {} ({})", token_user->User.Sid, user_name);
-        RegKey key(HKEY_USERS, std::format(R"({}\{})", token_user->User.Sid, DesktopPolicyKey).c_str(),
-                   KEY_NOTIFY | KEY_SET_VALUE);
+        registry::key key(HKEY_USERS, std::format(R"({}\{})", token_user->User.Sid, DesktopPolicyKey).c_str(),
+                          KEY_NOTIFY | KEY_SET_VALUE);
 
         logging_lock_guard session_guard(context->session_mutex, "emplacement");
         context->sessions.emplace(std::piecewise_construct, std::forward_as_tuple(dwSessionId),
@@ -313,24 +313,24 @@ static DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lp
 static void RemoveLoginMessage(HKEY key)
 {
     LOG_FUNC();
-    DeleteRegistryValue(key, "LegalNoticeText");
-    DeleteRegistryValue(key, "LegalNoticeCaption");
+    registry::delete_value(key, "LegalNoticeText");
+    registry::delete_value(key, "LegalNoticeCaption");
 }
 
 static void RemoveAutosignonRestriction(HKEY key)
 {
     LOG_FUNC();
-    DeleteRegistryValue(key, "DisableAutomaticRestartSignOn");
-    DeleteRegistryValue(key, "DontDisplayLastUserName");
+    registry::delete_value(key, "DisableAutomaticRestartSignOn");
+    registry::delete_value(key, "DontDisplayLastUserName");
 }
 
 static void RemoveScreenSaverPolicy(HKEY key)
 {
     LOG_FUNC();
-    DeleteRegistryValue(key, "ScreenSaveActive");
-    DeleteRegistryValue(key, "ScreenSaverIsSecure");
-    DeleteRegistryValue(key, "ScreenSaverTimeOut");
-    DeleteRegistryValue(key, "ScrnSave.exe");
+    registry::delete_value(key, "ScreenSaveActive");
+    registry::delete_value(key, "ScreenSaverIsSecure");
+    registry::delete_value(key, "ScreenSaverTimeOut");
+    registry::delete_value(key, "ScrnSave.exe");
 }
 
 // Tell the OS to set the event when there are changes to the given registry key.
@@ -394,7 +394,7 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             WDLOG(debug) << "Created notification event";
 
             WDLOG(debug) << "Opening target registry key";
-            RegKey const system_key(HKEY_LOCAL_MACHINE, SystemPolicyKey, KEY_NOTIFY | KEY_SET_VALUE);
+            registry::key const system_key(HKEY_LOCAL_MACHINE, SystemPolicyKey, KEY_NOTIFY | KEY_SET_VALUE);
             WDLOG(debug) << "Opened target registry key";
 
             start_pending.dwCheckPoint = starting_checkpoint++;
