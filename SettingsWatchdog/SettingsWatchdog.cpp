@@ -345,19 +345,20 @@ static void EstablishNotification(HKEY key, Event const& NotifyEvent)
 }
 
 // A function to include in a `while` test to log the progress on each loop iteration.
-static bool PrepareNextIteration()
+static void PrepareNextIteration()
 {
     LOG_FUNC();
     WDLOG(debug) << "Looping again";
-    return true;
 }
 
+// Check whether a value is in the given half-open range.
 template <typename T>
 static bool check_range(T const& min, T const& max, T const& value)
 {
     return min <= value && value < max;
 }
 
+// Check whether a value is in the given half-open range, and log a warning if it's not.
 template <typename T>
 static bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
 {
@@ -365,6 +366,108 @@ static bool ensure_range(T const& min, T const& max, T const& value, std::string
         return true;
     WDLOG(warning) << std::format("{} {} not in range [{},{})", label, value, min, max);
     return false;
+}
+
+static void run_service_loop(registry::key const& system_key, Event const& system_notify_event,
+                             ServiceContext<SettingsWatchdogContext>& context)
+{
+    for (;; PrepareNextIteration()) {
+        std::vector<HANDLE> wait_handles { system_notify_event, context.StopEvent, context.SessionChange };
+        {
+            logging_lock_guard session_guard(context.session_mutex, "pre-wait");
+            std::ranges::copy(context.sessions | std::views::values | std::views::transform(&SessionData::notification),
+                              std::back_inserter(wait_handles));
+        }
+        if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
+            wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
+        }
+
+        WDLOG(info) << std::format("Waiting for {} event(s)", wait_handles.size());
+        DWORD const WaitResult = WaitForMultipleObjects(boost::numeric_cast<DWORD>(wait_handles.size()),
+                                                        wait_handles.data(), false, INFINITE);
+        std::error_code ec(GetLastError(), std::system_category());
+        WDLOG(trace) << std::format("Wait returned {}",
+                                    get(wait_results, WaitResult).value_or(std::to_string(WaitResult)));
+        switch (WaitResult) {
+            case WAIT_OBJECT_0: {
+                WDLOG(trace) << "System registry changed";
+                // Do system-wide updates.
+                RemoveLoginMessage(system_key);
+                RemoveAutosignonRestriction(system_key);
+
+                // Reset so we're notified of more updates to the registry key.
+                EstablishNotification(system_key, system_notify_event);
+                break;
+            }
+            case WAIT_OBJECT_0 + 1: {
+                WDLOG(trace) << "Stop requested";
+                SERVICE_STATUS stop_pending = {
+                    .dwServiceType = ServiceType,
+                    .dwCurrentState = SERVICE_STOP_PENDING,
+                    .dwWin32ExitCode = NO_ERROR,
+                    .dwCheckPoint = context.stopping_checkpoint++,
+                    .dwWaitHint = 10,
+                };
+                context.SetServiceStatus(stop_pending);
+                return;
+            }
+            case WAIT_OBJECT_0 + 2: {
+                WDLOG(trace) << "Session list changed";
+                WinCheck(ResetEvent(context.SessionChange), "resetting session event");
+
+                logging_lock_guard session_guard(context.session_mutex, "session-list change");
+
+                // Remove any sessions that we've received log-off events for. It's important that this happen
+                // here in the main service thread because it's the same thread that handles registry-change
+                // events below. We mustn't remove items from the session map while we're waiting for
+                // registry-change events because the code below searches the session map for the triggering
+                // registry-change event handle to determine which session's registry changed.
+                std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
+
+                // Begin watching for changes to any sessions we've received log-on event for.
+                std::ranges::for_each(context.sessions | std::views::values | std::views::filter(&SessionData::new_),
+                                      [](SessionData& session) {
+                                          session.new_ = false;
+                                          EstablishNotification(session.key, session.notification);
+                                      });
+                break;
+            }
+            default: {
+                if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
+                    // We cannot trust that context.sessions hasn't changed since wait_handles was initialized
+                    // above. We might call add_session. That means that the index of the triggered event in
+                    // wait_handles doesn't necessarily match with the index of the sessions we'd get by
+                    // enumerating the map here. Instead, we'll look for the event handle.
+                    HANDLE const triggering_event = wait_handles[WaitResult - WAIT_OBJECT_0];
+                    logging_lock_guard session_guard(context.session_mutex, "session key change");
+                    auto const session_it = std::ranges::find(context.sessions | std::views::values, triggering_event,
+                                                              &SessionData::notification);
+                    // The session map hasn't had any items removed from it since wait_handles was initialized,
+                    // so we're guaranteed to find triggering_event in the map. There's no need to check whether
+                    // the iterator is valid. (And there's no easy way to check it anyway.)
+                    auto const& session = *session_it;
+                    WDLOG(trace) << std::format("Session registry changed for {}", session.username);
+
+                    // Do session-related updates.
+                    RemoveScreenSaverPolicy(session.key);
+
+                    // Reset so we're notified of more updates to the registry key.
+                    EstablishNotification(session.key, session.notification);
+                } else {
+                    WDLOG(warning) << "Unexpected wait result";
+                }
+                break;
+            }
+            case WAIT_TIMEOUT: {
+                WDLOG(warning) << "Infinity elapsed";
+                break;
+            }
+            case WAIT_FAILED: {
+                WDLOG(error) << "Waiting for notification failed";
+                throw std::system_error(ec, "Error waiting for events");
+            }
+        }
+    }
 }
 
 // The main entrypoint of the service. When this function returns, the service has terminated.
@@ -444,107 +547,8 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             std::ranges::for_each(context.sessions | std::views::values, RemoveScreenSaverPolicy, &SessionData::key);
 
             WDLOG(debug) << "Beginning service loop";
-            bool stop_requested = false;
-            do {
-                std::vector<HANDLE> wait_handles { system_notify_event, context.StopEvent, context.SessionChange };
-                {
-                    logging_lock_guard session_guard(context.session_mutex, "pre-wait");
-                    std::ranges::copy(
-                        context.sessions | std::views::values | std::views::transform(&SessionData::notification),
-                        std::back_inserter(wait_handles));
-                }
-                if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
-                    wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
-                }
+            run_service_loop(system_key, system_notify_event, context);
 
-                WDLOG(info) << std::format("Waiting for {} event(s)", wait_handles.size());
-                DWORD const WaitResult = WaitForMultipleObjects(boost::numeric_cast<DWORD>(wait_handles.size()),
-                                                                wait_handles.data(), false, INFINITE);
-                std::error_code ec(GetLastError(), std::system_category());
-                WDLOG(trace) << std::format("Wait returned {}",
-                                            get(wait_results, WaitResult).value_or(std::to_string(WaitResult)));
-                switch (WaitResult) {
-                    case WAIT_OBJECT_0: {
-                        WDLOG(trace) << "System registry changed";
-                        // Do system-wide updates.
-                        RemoveLoginMessage(system_key);
-                        RemoveAutosignonRestriction(system_key);
-
-                        // Reset so we're notified of more updates to the registry key.
-                        EstablishNotification(system_key, system_notify_event);
-                        break;
-                    }
-                    case WAIT_OBJECT_0 + 1: {
-                        WDLOG(trace) << "Stop requested";
-                        SERVICE_STATUS stop_pending = {
-                            .dwServiceType = ServiceType,
-                            .dwCurrentState = SERVICE_STOP_PENDING,
-                            .dwWin32ExitCode = NO_ERROR,
-                            .dwCheckPoint = context.stopping_checkpoint++,
-                            .dwWaitHint = 10,
-                        };
-                        context.SetServiceStatus(stop_pending);
-                        stop_requested = true;
-                        break;
-                    }
-                    case WAIT_OBJECT_0 + 2: {
-                        WDLOG(trace) << "Session list changed";
-                        WinCheck(ResetEvent(context.SessionChange), "resetting session event");
-
-                        logging_lock_guard session_guard(context.session_mutex, "session-list change");
-
-                        // Remove any sessions that we've received log-off events for. It's important that this happen
-                        // here in the main service thread because it's the same thread that handles registry-change
-                        // events below. We mustn't remove items from the session map while we're waiting for
-                        // registry-change events because the code below searches the session map for the triggering
-                        // registry-change event handle to determine which session's registry changed.
-                        std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
-
-                        // Begin watching for changes to any sessions we've received log-on event for.
-                        std::ranges::for_each(
-                            context.sessions | std::views::values | std::views::filter(&SessionData::new_),
-                            [](SessionData& session) {
-                                session.new_ = false;
-                                EstablishNotification(session.key, session.notification);
-                            });
-                        break;
-                    }
-                    default: {
-                        if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
-                            // We cannot trust that context.sessions hasn't changed since wait_handles was initialized
-                            // above. We might call add_session. That means that the index of the triggered event in
-                            // wait_handles doesn't necessarily match with the index of the sessions we'd get by
-                            // enumerating the map here. Instead, we'll look for the event handle.
-                            HANDLE const triggering_event = wait_handles[WaitResult - WAIT_OBJECT_0];
-                            logging_lock_guard session_guard(context.session_mutex, "session key change");
-                            auto const session_it = std::ranges::find(context.sessions | std::views::values,
-                                                                      triggering_event, &SessionData::notification);
-                            // The session map hasn't had any items removed from it since wait_handles was initialized,
-                            // so we're guaranteed to find triggering_event in the map. There's no need to check whether
-                            // the iterator is valid. (And there's no easy way to check it anyway.)
-                            auto const& session = *session_it;
-                            WDLOG(trace) << std::format("Session registry changed for {}", session.username);
-
-                            // Do session-related updates.
-                            RemoveScreenSaverPolicy(session.key);
-
-                            // Reset so we're notified of more updates to the registry key.
-                            EstablishNotification(session.key, session.notification);
-                        } else {
-                            WDLOG(warning) << "Unexpected wait result";
-                        }
-                        break;
-                    }
-                    case WAIT_TIMEOUT: {
-                        WDLOG(warning) << "Infinity elapsed";
-                        break;
-                    }
-                    case WAIT_FAILED: {
-                        WDLOG(error) << "Waiting for notification failed";
-                        throw std::system_error(ec, "Error waiting for events");
-                    }
-                }
-            } while (!stop_requested && PrepareNextIteration());
             SERVICE_STATUS stopped = {
                 .dwServiceType = ServiceType,
                 .dwCurrentState = SERVICE_STOPPED,
@@ -567,7 +571,6 @@ static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
         }
     } catch (std::system_error const& ex) {
         WDLOG(error) << std::format("Error ({}) {}", ex.code(), boost::algorithm::trim_copy(std::string(ex.what())));
-        return;
     }
 }
 
