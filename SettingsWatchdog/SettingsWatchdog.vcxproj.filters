@@ -75,5 +75,8 @@
     <ClInclude Include="warnings.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="memory.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

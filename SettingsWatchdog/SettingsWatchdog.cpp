@@ -29,38 +29,13 @@ REENABLE_ANALYSIS
 #include "git-commit.hpp"
 #include "handles.hpp"
 #include "logging.hpp"
+#include "memory.hpp"
 #include "registry.hpp"
 #include "string-maps.hpp"
 
 static auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)";
 static auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
 static DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
-
-template <void (*FREE)(void*)>
-class AutoFreeString: private boost::noncopyable
-{
-private:
-    wchar_t* m_value = NULL;
-    std::string mutable m_narrow_value;
-
-public:
-    ~AutoFreeString()
-    {
-        FREE(m_value);
-    }
-    wchar_t** operator&()
-    {
-        return &m_value;
-    }
-    operator char const*() const
-    {
-        m_narrow_value = boost::nowide::narrow(m_value);
-        return m_narrow_value.c_str();
-    }
-};
-
-using WTSString = AutoFreeString<[](void* arg) { WTSFreeMemory(arg); }>;
-using LocalString = AutoFreeString<[](void* arg) { LocalFree(arg); }>;
 
 static void InstallService()
 {
