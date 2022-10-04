@@ -180,6 +180,8 @@ static std::string get_session_user_name(DWORD dwSessionId)
     return std::string { name_buffer };
 }
 
+// Add a session to the list of tracked sessions. Fetches information about the given session ID and initializes the
+// session data.
 static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
 {
     LOG_FUNC();
@@ -227,6 +229,24 @@ static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContex
         SetEvent(context->SessionChange);
     } catch (std::system_error const&) {
         WDLOG(warning) << std::format("no registry key for sid {}", token_user->User.Sid);
+    }
+}
+
+// Mark a session ID for eventual removal from the session tracking list. Removal happens in the main service loop in
+// response to the SessionChange event because that's where we know that nothing is still listening for session-change
+// events, which means it's safe to modify the list of sessions.
+static void remove_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
+{
+    LOG_FUNC();
+    logging_lock_guard session_guard(context->session_mutex, "logoff");
+    if (auto const it = context->sessions.find(dwSessionId); it == context->sessions.end()) {
+        WDLOG(info) << "unknown session; ignored.";
+    } else {
+        // Mark the session for removal from the session list.
+        it->second.running = false;
+        // Wake up the main service thread so it stops watching for changes to the registry keys for
+        // this session.
+        SetEvent(context->SessionChange);
     }
 }
 
@@ -279,17 +299,7 @@ static DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lp
                     break;
                 }
                 case WTS_SESSION_LOGOFF: {
-                    logging_lock_guard session_guard(context->session_mutex, "logoff");
-                    if (auto const it = context->sessions.find(notification->dwSessionId);
-                        it == context->sessions.end()) {
-                        WDLOG(info) << "unknown session; ignored.";
-                    } else {
-                        // Mark the session for removal from the session list.
-                        it->second.running = false;
-                        // Wake up the main service thread so it stops watching for changes to the registry keys for
-                        // this session.
-                        SetEvent(context->SessionChange);
-                    }
+                    remove_session(notification->dwSessionId, context);
                     break;
                 }
                 default:
