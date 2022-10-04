@@ -28,8 +28,7 @@ T&& WinCheck(T&& arg, char const* message)
 /// </summary>
 /// <param name="arg">The return value of the registry API function. ERROR_SUCCESS passes.</param>
 /// <param name="message">An informational message to include in the exception, if the call fails</param>
-/// <returns>arg, if arg passes. Otherwise, it throws a system_error exception.</returns>
-LSTATUS RegCheck(LSTATUS arg, char const* message);
+void RegCheck(LSTATUS arg, char const* message);
 
 namespace errors
 {
