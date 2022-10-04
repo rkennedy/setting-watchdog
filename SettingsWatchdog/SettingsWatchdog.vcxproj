@@ -121,6 +121,10 @@
     <ClInclude Include="warnings.hpp" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="cpp.hint" />
+  </ItemGroup>
+
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="GenerateCommitCode" BeforeTargets="BeforeBuildGenerateSources">
     <Exec Command="git describe --always --match= --abbrev=40 --dirty" ConsoleToMsBuild="true">
