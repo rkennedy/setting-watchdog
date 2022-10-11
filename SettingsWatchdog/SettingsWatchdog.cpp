@@ -1,10 +1,10 @@
 DISABLE_ANALYSIS
 #include <algorithm>
 #include <exception>
-#include <experimental/map>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <ranges>
 #include <string>
 #include <system_error>
 #include <type_traits>
@@ -13,17 +13,9 @@ DISABLE_ANALYSIS
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
-#include <boost/nowide/args.hpp>
 #include <boost/nowide/convert.hpp>
 #include <boost/nowide/iostream.hpp>
 #include <boost/numeric/conversion/cast.hpp>
-#include <boost/program_options.hpp>
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/adaptor/transformed.hpp>
-#include <boost/range/algorithm/for_each.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
-#include <plog/Appenders/RollingFileAppender.h>
 #include <plog/Initializers/ConsoleInitializer.h>
 #include <plog/Log.h>
 
@@ -37,50 +29,23 @@ REENABLE_ANALYSIS
 #include "git-commit.hpp"
 #include "handles.hpp"
 #include "logging.hpp"
+#include "memory.hpp"
 #include "registry.hpp"
 #include "string-maps.hpp"
 
-namespace po = boost::program_options;
+static auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)";
+static auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
+static DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
 
-auto const SystemPolicyKey = R"(SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System)";
-auto const DesktopPolicyKey = R"(Control Panel\Desktop)";
-DWORD const ServiceType = SERVICE_WIN32_OWN_PROCESS;
-
-template <void (*FREE)(void*)>
-class AutoFreeString: private boost::noncopyable
+static void InstallService()
 {
-private:
-    wchar_t* m_value = NULL;
-    std::string mutable m_narrow_value;
-
-public:
-    ~AutoFreeString()
-    {
-        FREE(m_value);
-    }
-    wchar_t** operator&()
-    {
-        return &m_value;
-    }
-    operator char const*() const
-    {
-        m_narrow_value = boost::nowide::narrow(m_value);
-        return m_narrow_value.c_str();
-    }
-};
-
-using WTSString = AutoFreeString<[](void* arg) { WTSFreeMemory(arg); }>;
-using LocalString = AutoFreeString<[](void* arg) { LocalFree(arg); }>;
-
-void InstallService()
-{
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CREATE_SERVICE);
     auto const self_path = boost::dll::program_location();
     WDLOG(trace) << std::format("Current file name is {}", boost::nowide::narrow(self_path.native()));
 
     ServiceHandle const service(handle, "SettingsWatchdog", "Settings Watchdog", ServiceType, SERVICE_AUTO_START,
-                                self_path.c_str());
+                                self_path);
     WDLOG(info) << "Service created";
 
     std::wstring const description_string
@@ -90,9 +55,9 @@ void InstallService()
     WDLOG(trace) << "Service configured";
 }
 
-void UninstallService()
+static void UninstallService()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     ServiceManagerHandle const handle(SC_MANAGER_CONNECT);
     ServiceHandle const service(handle, "SettingsWatchdog", DELETE);
     WDLOG(trace) << "Service opened";
@@ -105,9 +70,10 @@ struct SessionData: private boost::noncopyable
     bool new_;
     bool running;
     Event notification;
-    RegKey const key;
+    registry::key const key;
     std::string const username;
-    SessionData(RegKey&& key, std::string const& username):
+
+    SessionData(registry::key&& key, std::string const& username):
         new_(true),
         running(true),
         notification(),
@@ -137,12 +103,21 @@ private:
     SERVICE_STATUS_HANDLE StatusHandle;
 };
 
+// Context information about the program that's chared between multiple threads, particularly the main service thread
+// running in SettingsWatchdogMain and the notification thread where ServiceHandler gets called.
 struct SettingsWatchdogContext
 {
+    // A Windows event that gets triggered when it's time for the program to terminate.
     Event StopEvent;
+    // A Windows event that the program will use to notify itself that the list of sessions has changed. The service
+    // handler receives notifications when a session logs on or off, and the program needs to update its internal
+    // session data accordingly.
     Event SessionChange;
     DWORD stopping_checkpoint = 0;
+    // A mutex to protect updates to `sessions`.
     std::mutex session_mutex;
+    // The user sessions being watched by the program. Key is the session ID, and value is the data associated with the
+    // session in the program.
     std::map<DWORD, SessionData> sessions;
 };
 
@@ -152,7 +127,7 @@ struct std::formatter<PSID, CharT>: std::formatter<char const*, CharT>
     template <class FormatContext>
     auto format(PSID sid, FormatContext& ctx) const
     {
-        BOOST_LOG_FUNC();
+        LOG_FUNC();
         LocalString value;
         WinCheck(ConvertSidToStringSidW(sid, &value), "converting string sid");
         return std::formatter<char const*, CharT>::format(static_cast<char const*>(value), ctx);
@@ -165,33 +140,51 @@ struct std::formatter<std::error_code, CharT>: std::formatter<std::string, CharT
     template <class FormatContext>
     auto format(std::error_code code, FormatContext& ctx) const
     {
-        BOOST_LOG_FUNC();
+        LOG_FUNC();
         std::ostringstream os;
         os << code;
         return std::formatter<std::string, CharT>::format(os.str(), ctx);
     }
 };
 
+// A lock that logs its label prior to acquiring or releasing its lock
 struct logging_lock_guard
 {
-    std::string label;
-    std::lock_guard<std::mutex> guard;
+private:
+    std::string m_label;
+    std::lock_guard<std::mutex> m_guard;
+
+public:
     logging_lock_guard(std::mutex& m, std::string const& label):
-        label(([](std::string const& l) {
+        m_label(([](std::string const& l) {
+            // The lock gets acquired by creating `guard`, so we use this function to log the message during the
+            // construction of `label` instead of after `guard` is already locked.
             WDLOG(debug) << std::format("locking {}", l);
             return l;
         })(label)),
-        guard(m)
+        m_guard(m)
     { }
     ~logging_lock_guard()
     {
-        WDLOG(debug) << std::format("unlocked {}", label);
+        WDLOG(debug) << std::format("unlocked {}", m_label);
     }
 };
 
-void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
+static std::string get_session_user_name(DWORD dwSessionId)
 {
-    BOOST_LOG_FUNC();
+    WTSString name_buffer;
+    DWORD name_buffer_bytes;
+    WinCheck(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer,
+                                         &name_buffer_bytes),
+             "getting session user name");
+    return std::string { name_buffer };
+}
+
+// Add a session to the list of tracked sessions. Fetches information about the given session ID and initializes the
+// session data.
+static void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
+{
+    LOG_FUNC();
     WDLOG(trace) << std::format("adding session ID {}", dwSessionId);
 #ifndef BOOST_ASSERT_IS_VOID
     {
@@ -201,20 +194,15 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
 #endif
 
     // Get session user name
-    WTSString name_buffer;
-    DWORD name_buffer_bytes;
-    WinCheck(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, dwSessionId, WTSUserName, &name_buffer,
-                                         &name_buffer_bytes),
-             "getting session user name");
-    WDLOG(trace) << std::format("user for session is {}", name_buffer);
+    std::string const user_name { get_session_user_name(dwSessionId) };
+    WDLOG(trace) << std::format("user for session is {}", user_name);
 
     AutoCloseHandle session_token;
     try {
         // Get SID of session
         WinCheck(WTSQueryUserToken(dwSessionId, &session_token), "getting session token");
     } catch (std::system_error const& ex) {
-        std::error_code const error_no_token(ERROR_NO_TOKEN, std::system_category());
-        if (ex.code() == error_no_token) {
+        if (ex.code() == errors::no_token) {
             WDLOG(info) << "no token for session";
             return;
         }
@@ -231,32 +219,52 @@ void add_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* con
     auto const token_user = reinterpret_cast<TOKEN_USER*>(group_buffer.data());
 
     try {
-        WDLOG(trace) << std::format("session sid {} ({})", token_user->User.Sid, name_buffer);
-        RegKey key(HKEY_USERS, std::format(R"({}\{})", token_user->User.Sid, DesktopPolicyKey).c_str(),
-                   KEY_NOTIFY | KEY_SET_VALUE);
+        WDLOG(trace) << std::format("session sid {} ({})", token_user->User.Sid, user_name);
+        registry::key key(HKEY_USERS, std::format(R"({}\{})", token_user->User.Sid, DesktopPolicyKey).c_str(),
+                          KEY_NOTIFY | KEY_SET_VALUE);
 
         logging_lock_guard session_guard(context->session_mutex, "emplacement");
         context->sessions.emplace(std::piecewise_construct, std::forward_as_tuple(dwSessionId),
-                                  std::forward_as_tuple(std::move(key), std::string(name_buffer)));
+                                  std::forward_as_tuple(std::move(key), user_name));
         SetEvent(context->SessionChange);
     } catch (std::system_error const&) {
         WDLOG(warning) << std::format("no registry key for sid {}", token_user->User.Sid);
     }
 }
 
-DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
+// Mark a session ID for eventual removal from the session tracking list. Removal happens in the main service loop in
+// response to the SessionChange event because that's where we know that nothing is still listening for session-change
+// events, which means it's safe to modify the list of sessions.
+static void remove_session(DWORD dwSessionId, ServiceContext<SettingsWatchdogContext>* context)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
+    logging_lock_guard session_guard(context->session_mutex, "logoff");
+    if (auto const it = context->sessions.find(dwSessionId); it == context->sessions.end()) {
+        WDLOG(info) << "unknown session; ignored.";
+    } else {
+        // Mark the session for removal from the session list.
+        it->second.running = false;
+        // Wake up the main service thread so it stops watching for changes to the registry keys for
+        // this session.
+        SetEvent(context->SessionChange);
+    }
+}
+
+// Callback for handling events on a Windows service.
+static DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
+{
+    LOG_FUNC();
     auto const context = static_cast<ServiceContext<SettingsWatchdogContext>*>(lpContext);
 
     WDLOG(trace) << std::format("Service control {} ({})", dwControl,
                                 get(control_names, dwControl).value_or("unknown"));
+    // The OS notifies us of various events related to services.
     switch (dwControl) {
         case SERVICE_CONTROL_INTERROGATE:
             return NO_ERROR;
         default:
             return ERROR_CALL_NOT_IMPLEMENTED;
-        case SERVICE_CONTROL_STOP: {
+        case SERVICE_CONTROL_STOP: {  // The OS has requested our service to stop.
             SERVICE_STATUS stop_pending = {
                 .dwServiceType = ServiceType,
                 .dwCurrentState = SERVICE_STOP_PENDING,
@@ -266,6 +274,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
             };
             context->SetServiceStatus(stop_pending);
 
+            // Notify the service listener that we should stop.
             SetEvent(context->StopEvent);
 
             stop_pending.dwCheckPoint = context->stopping_checkpoint++;
@@ -290,14 +299,7 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
                     break;
                 }
                 case WTS_SESSION_LOGOFF: {
-                    logging_lock_guard session_guard(context->session_mutex, "logoff");
-                    if (auto const it = context->sessions.find(notification->dwSessionId);
-                        it == context->sessions.end()) {
-                        WDLOG(info) << "unknown session; ignored.";
-                    } else {
-                        it->second.running = false;
-                        SetEvent(context->SessionChange);
-                    }
+                    remove_session(notification->dwSessionId, context);
                     break;
                 }
                 default:
@@ -308,32 +310,33 @@ DWORD WINAPI ServiceHandler(DWORD dwControl, DWORD dwEventType, LPVOID lpEventDa
     }
 }
 
-void RemoveLoginMessage(HKEY key)
+static void RemoveLoginMessage(HKEY key)
 {
-    BOOST_LOG_FUNC();
-    DeleteRegistryValue(key, "LegalNoticeText");
-    DeleteRegistryValue(key, "LegalNoticeCaption");
+    LOG_FUNC();
+    registry::delete_value(key, "LegalNoticeText");
+    registry::delete_value(key, "LegalNoticeCaption");
 }
 
-void RemoveAutosignonRestriction(HKEY key)
+static void RemoveAutosignonRestriction(HKEY key)
 {
-    BOOST_LOG_FUNC();
-    DeleteRegistryValue(key, "DisableAutomaticRestartSignOn");
-    DeleteRegistryValue(key, "DontDisplayLastUserName");
+    LOG_FUNC();
+    registry::delete_value(key, "DisableAutomaticRestartSignOn");
+    registry::delete_value(key, "DontDisplayLastUserName");
 }
 
-void RemoveScreenSaverPolicy(HKEY key)
+static void RemoveScreenSaverPolicy(HKEY key)
 {
-    BOOST_LOG_FUNC();
-    DeleteRegistryValue(key, "ScreenSaveActive");
-    DeleteRegistryValue(key, "ScreenSaverIsSecure");
-    DeleteRegistryValue(key, "ScreenSaverTimeOut");
-    DeleteRegistryValue(key, "ScrnSave.exe");
+    LOG_FUNC();
+    registry::delete_value(key, "ScreenSaveActive");
+    registry::delete_value(key, "ScreenSaverIsSecure");
+    registry::delete_value(key, "ScreenSaverTimeOut");
+    registry::delete_value(key, "ScrnSave.exe");
 }
 
-void EstablishNotification(HKEY key, Event const& NotifyEvent)
+// Tell the OS to set the event when there are changes to the given registry key.
+static void EstablishNotification(HKEY key, Event const& NotifyEvent)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     WDLOG(debug) << "Establishing notification";
     WinCheck(ResetEvent(NotifyEvent), "resetting event");
     RegCheck(RegNotifyChangeKeyValue(key, true, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, NotifyEvent, true),
@@ -341,21 +344,23 @@ void EstablishNotification(HKEY key, Event const& NotifyEvent)
     WDLOG(debug) << "Established notification";
 }
 
-bool PrepareNextIteration()
+// A function to include in a `while` test to log the progress on each loop iteration.
+static void PrepareNextIteration()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     WDLOG(debug) << "Looping again";
-    return true;
 }
 
+// Check whether a value is in the given half-open range.
 template <typename T>
-bool check_range(T const& min, T const& max, T const& value)
+static bool check_range(T const& min, T const& max, T const& value)
 {
     return min <= value && value < max;
 }
 
+// Check whether a value is in the given half-open range, and log a warning if it's not.
 template <typename T>
-bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
+static bool ensure_range(T const& min, T const& max, T const& value, std::string const& label)
 {
     if (check_range(min, max, value)) [[likely]]
         return true;
@@ -363,9 +368,112 @@ bool ensure_range(T const& min, T const& max, T const& value, std::string const&
     return false;
 }
 
-void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
+static void run_service_loop(registry::key const& system_key, Event const& system_notify_event,
+                             ServiceContext<SettingsWatchdogContext>& context)
 {
-    BOOST_LOG_FUNC();
+    for (;; PrepareNextIteration()) {
+        std::vector<HANDLE> wait_handles { system_notify_event, context.StopEvent, context.SessionChange };
+        {
+            logging_lock_guard session_guard(context.session_mutex, "pre-wait");
+            std::ranges::copy(context.sessions | std::views::values | std::views::transform(&SessionData::notification),
+                              std::back_inserter(wait_handles));
+        }
+        if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
+            wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
+        }
+
+        WDLOG(info) << std::format("Waiting for {} event(s)", wait_handles.size());
+        DWORD const WaitResult = WaitForMultipleObjects(boost::numeric_cast<DWORD>(wait_handles.size()),
+                                                        wait_handles.data(), false, INFINITE);
+        std::error_code ec(GetLastError(), std::system_category());
+        WDLOG(trace) << std::format("Wait returned {}",
+                                    get(wait_results, WaitResult).value_or(std::to_string(WaitResult)));
+        switch (WaitResult) {
+            case WAIT_OBJECT_0: {
+                WDLOG(trace) << "System registry changed";
+                // Do system-wide updates.
+                RemoveLoginMessage(system_key);
+                RemoveAutosignonRestriction(system_key);
+
+                // Reset so we're notified of more updates to the registry key.
+                EstablishNotification(system_key, system_notify_event);
+                break;
+            }
+            case WAIT_OBJECT_0 + 1: {
+                WDLOG(trace) << "Stop requested";
+                SERVICE_STATUS stop_pending = {
+                    .dwServiceType = ServiceType,
+                    .dwCurrentState = SERVICE_STOP_PENDING,
+                    .dwWin32ExitCode = NO_ERROR,
+                    .dwCheckPoint = context.stopping_checkpoint++,
+                    .dwWaitHint = 10,
+                };
+                context.SetServiceStatus(stop_pending);
+                return;
+            }
+            case WAIT_OBJECT_0 + 2: {
+                WDLOG(trace) << "Session list changed";
+                WinCheck(ResetEvent(context.SessionChange), "resetting session event");
+
+                logging_lock_guard session_guard(context.session_mutex, "session-list change");
+
+                // Remove any sessions that we've received log-off events for. It's important that this happen
+                // here in the main service thread because it's the same thread that handles registry-change
+                // events below. We mustn't remove items from the session map while we're waiting for
+                // registry-change events because the code below searches the session map for the triggering
+                // registry-change event handle to determine which session's registry changed.
+                std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
+
+                // Begin watching for changes to any sessions we've received log-on event for.
+                std::ranges::for_each(context.sessions | std::views::values | std::views::filter(&SessionData::new_),
+                                      [](SessionData& session) {
+                                          session.new_ = false;
+                                          EstablishNotification(session.key, session.notification);
+                                      });
+                break;
+            }
+            default: {
+                if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
+                    // We cannot trust that context.sessions hasn't changed since wait_handles was initialized
+                    // above. We might call add_session. That means that the index of the triggered event in
+                    // wait_handles doesn't necessarily match with the index of the sessions we'd get by
+                    // enumerating the map here. Instead, we'll look for the event handle.
+                    HANDLE const triggering_event = wait_handles[WaitResult - WAIT_OBJECT_0];
+                    logging_lock_guard session_guard(context.session_mutex, "session key change");
+                    auto const session_it = std::ranges::find(context.sessions | std::views::values, triggering_event,
+                                                              &SessionData::notification);
+                    // The session map hasn't had any items removed from it since wait_handles was initialized,
+                    // so we're guaranteed to find triggering_event in the map. There's no need to check whether
+                    // the iterator is valid. (And there's no easy way to check it anyway.)
+                    auto const& session = *session_it;
+                    WDLOG(trace) << std::format("Session registry changed for {}", session.username);
+
+                    // Do session-related updates.
+                    RemoveScreenSaverPolicy(session.key);
+
+                    // Reset so we're notified of more updates to the registry key.
+                    EstablishNotification(session.key, session.notification);
+                } else {
+                    WDLOG(warning) << "Unexpected wait result";
+                }
+                break;
+            }
+            case WAIT_TIMEOUT: {
+                WDLOG(warning) << "Infinity elapsed";
+                break;
+            }
+            case WAIT_FAILED: {
+                WDLOG(error) << "Waiting for notification failed";
+                throw std::system_error(ec, "Error waiting for events");
+            }
+        }
+    }
+}
+
+// The main entrypoint of the service. When this function returns, the service has terminated.
+static void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
+{
+    LOG_FUNC();
     try {
         WDLOG(debug) << "Establishing service context";
         ServiceContext<SettingsWatchdogContext> context("SettingsWatchdog", ServiceHandler);
@@ -389,7 +497,7 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             WDLOG(debug) << "Created notification event";
 
             WDLOG(debug) << "Opening target registry key";
-            RegKey const system_key(HKEY_LOCAL_MACHINE, SystemPolicyKey, KEY_NOTIFY | KEY_SET_VALUE);
+            registry::key const system_key(HKEY_LOCAL_MACHINE, SystemPolicyKey, KEY_NOTIFY | KEY_SET_VALUE);
             WDLOG(debug) << "Opened target registry key";
 
             start_pending.dwCheckPoint = starting_checkpoint++;
@@ -400,11 +508,14 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             WDLOG(debug) << "enumerating sessions";
             DWORD level = 1;
 #pragma warning(push)
+            // The first parameter of WTSEnumerateSessionsEx is annotated with _In_, which indicates that its value
+            // isn't supposed to be null. But WTS_CURRENT_SERVER_HANDLE is null, and that triggers a warning, which we
+            // want to suppress.
 #pragma warning(disable : 6387)  // Param 1 could be zero
             WinCheck(WTSEnumerateSessionsEx(WTS_CURRENT_SERVER_HANDLE, &level, 0, &raw_session_info, &session_count),
                      "getting session list");
 #pragma warning(pop)
-            std::shared_ptr<WTS_SESSION_INFO_1> session_info(raw_session_info, [&session_count](void* info) {
+            std::shared_ptr<WTS_SESSION_INFO_1[]> session_info(raw_session_info, [&session_count](void* info) {
                 WTSFreeMemoryEx(WTSTypeSessionInfoLevel1, info, session_count);
             });
             std::for_each_n(session_info.get(), session_count, [&context](WTS_SESSION_INFO_1 const& info) {
@@ -429,95 +540,15 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             };
             context.SetServiceStatus(started);
 
+            // Perform each of the cleanup tasks once at the start of the program. THen we'll watch the registry for any
+            // updates.
             RemoveLoginMessage(system_key);
             RemoveAutosignonRestriction(system_key);
-            boost::for_each(context.sessions, [](std::map<DWORD, SessionData>::value_type const& item) {
-                RemoveScreenSaverPolicy(item.second.key);
-            });
+            std::ranges::for_each(context.sessions | std::views::values, RemoveScreenSaverPolicy, &SessionData::key);
 
             WDLOG(debug) << "Beginning service loop";
-            bool stop_requested = false;
-            do {
-                std::vector<HANDLE> wait_handles { system_notify_event, context.StopEvent, context.SessionChange };
-                auto const FixedWaitObjectCount = wait_handles.size();
-                {
-                    logging_lock_guard session_guard(context.session_mutex, "pre-wait");
-                    boost::push_back(wait_handles,
-                                     context.sessions | boost::adaptors::map_values
-                                         | boost::adaptors::transformed(std::mem_fn(&SessionData::notification)));
-                }
-                if (!ensure_range<size_t>(1, MAXIMUM_WAIT_OBJECTS + 1, wait_handles.size(), "wait-handle count")) {
-                    wait_handles.resize(MAXIMUM_WAIT_OBJECTS);
-                }
+            run_service_loop(system_key, system_notify_event, context);
 
-                WDLOG(info) << std::format("Waiting for {} event(s)", wait_handles.size());
-                DWORD const WaitResult = WaitForMultipleObjects(boost::numeric_cast<DWORD>(wait_handles.size()),
-                                                                wait_handles.data(), false, INFINITE);
-                std::error_code ec(GetLastError(), std::system_category());
-                WDLOG(trace) << std::format("Wait returned {}",
-                                            get(wait_results, WaitResult).value_or(std::to_string(WaitResult)));
-                switch (WaitResult) {
-                    case WAIT_OBJECT_0: {
-                        WDLOG(trace) << "System registry changed";
-                        RemoveLoginMessage(system_key);
-                        RemoveAutosignonRestriction(system_key);
-                        EstablishNotification(system_key, system_notify_event);
-                        break;
-                    }
-                    case WAIT_OBJECT_0 + 1: {
-                        WDLOG(trace) << "Stop requested";
-                        SERVICE_STATUS stop_pending = {
-                            .dwServiceType = ServiceType,
-                            .dwCurrentState = SERVICE_STOP_PENDING,
-                            .dwWin32ExitCode = NO_ERROR,
-                            .dwCheckPoint = context.stopping_checkpoint++,
-                            .dwWaitHint = 10,
-                        };
-                        context.SetServiceStatus(stop_pending);
-                        stop_requested = true;
-                        break;
-                    }
-                    case WAIT_OBJECT_0 + 2: {
-                        WDLOG(trace) << "Session list changed";
-                        WinCheck(ResetEvent(context.SessionChange), "resetting session event");
-                        logging_lock_guard session_guard(context.session_mutex, "session-list change");
-                        std::erase_if(context.sessions, [](auto const& item) { return !item.second.running; });
-                        boost::for_each(context.sessions | boost::adaptors::map_values
-                                            | boost::adaptors::filtered(std::mem_fn(&SessionData::new_)),
-                                        [](SessionData& session) {
-                                            // TODO Initialize new sessions
-                                            session.new_ = false;
-                                            EstablishNotification(session.key, session.notification);
-                                        });
-                        break;
-                    }
-                    default: {
-                        if (check_range<size_t>(WAIT_OBJECT_0, WAIT_OBJECT_0 + wait_handles.size(), WaitResult)) {
-                            auto const session_index = WaitResult - WAIT_OBJECT_0 - FixedWaitObjectCount;
-                            logging_lock_guard session_guard(context.session_mutex, "session key change");
-                            if (!ensure_range<size_t>(0, context.sessions.size(), session_index, "session index")) {
-                                break;
-                            }
-                            auto const session_it = std::next(context.sessions.begin(), session_index);
-                            auto const& session = session_it->second;
-                            WDLOG(trace) << std::format("Session registry changed for {}", session.username);
-                            RemoveScreenSaverPolicy(session.key);
-                            EstablishNotification(session.key, session.notification);
-                        } else {
-                            WDLOG(warning) << "Unexpected wait result";
-                        }
-                        break;
-                    }
-                    case WAIT_TIMEOUT: {
-                        WDLOG(warning) << "Infinity elapsed";
-                        break;
-                    }
-                    case WAIT_FAILED: {
-                        WDLOG(error) << "Waiting for notification failed";
-                        throw std::system_error(ec, "Error waiting for events");
-                    }
-                }
-            } while (!stop_requested && PrepareNextIteration());
             SERVICE_STATUS stopped = {
                 .dwServiceType = ServiceType,
                 .dwCurrentState = SERVICE_STOPPED,
@@ -525,92 +556,45 @@ void WINAPI SettingsWatchdogMain(DWORD dwArgc, LPTSTR* lpszArgv)
             };
             context.SetServiceStatus(stopped);
         } catch (std::system_error const& ex) {
+            SERVICE_STATUS stopped = {
+                .dwServiceType = ServiceType,
+                .dwCurrentState = SERVICE_STOPPED,
+            };
             if (ex.code().category() == std::system_category()) {
-                SERVICE_STATUS stopped = {
-                    .dwServiceType = ServiceType,
-                    .dwCurrentState = SERVICE_STOPPED,
-                    .dwWin32ExitCode = boost::numeric_cast<DWORD>(ex.code().value()),
-                };
-                context.SetServiceStatus(stopped);
+                stopped.dwWin32ExitCode = boost::numeric_cast<DWORD>(ex.code().value());
             } else {
-                SERVICE_STATUS stopped = {
-                    .dwServiceType = ServiceType,
-                    .dwCurrentState = SERVICE_STOPPED,
-                    .dwWin32ExitCode = ERROR_SERVICE_SPECIFIC_ERROR,
-                    .dwServiceSpecificExitCode = boost::numeric_cast<DWORD>(ex.code().value()),
-                };
-                context.SetServiceStatus(stopped);
+                stopped.dwWin32ExitCode = ERROR_SERVICE_SPECIFIC_ERROR;
+                stopped.dwServiceSpecificExitCode = boost::numeric_cast<DWORD>(ex.code().value());
             }
+            context.SetServiceStatus(stopped);
             throw;
         }
     } catch (std::system_error const& ex) {
         WDLOG(error) << std::format("Error ({}) {}", ex.code(), boost::algorithm::trim_copy(std::string(ex.what())));
-        return;
     }
 }
 
 int main(int argc, char* argv[])
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     auto& logger { plog::init<LogFormatter>(plog::none, plog::streamStdErr) };
     try {
-        boost::nowide::args a(argc, argv);
-
-        po::options_description desc("Allowed options");
-        desc.add_options()
-            // clang-format off
-            ("help,h", "This help message")
-            ("install,i", "Install the service")
-            ("uninstall,u", "Uninstall the service")
-            ("log-location,l", po::value<std::filesystem::path>(), "Set the location of the log file")
-            ("verbose,v", po::value<plog::Severity>(), "Set the verbosity level")
-            // clang-format on
-            ;
-        po::variables_map vm;
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-        po::notify(vm);
-
-        if (vm.contains("help")) {
-            boost::nowide::cout << desc << std::endl;
-            return EXIT_SUCCESS;
-        }
-
-        if (vm.contains("log-location")) {
-            try {
-                config::log_file.set(vm.at("log-location").as<std::filesystem::path>());
-            } catch (std::system_error const& ex) {
-                std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
-                if (ex.code() != error_access_denied) {
-                    throw;
-                }
-                // We're unable to store the log location. No big deal.
-            }
-        }
-        static plog::RollingFileAppender<LogFormatter> file_appender(config::log_file.get().c_str());
-        logger.addAppender(&file_appender);
-
-        if (vm.contains("verbose")) {
-            try {
-                config::verbosity.set(vm.at("verbose").as<plog::Severity>());
-            } catch (std::system_error const& ex) {
-                std::error_code const error_access_denied(ERROR_ACCESS_DENIED, std::system_category());
-                if (ex.code() != error_access_denied) {
-                    throw;
-                }
-                // We're unable to store the verbosity. No big deal.
-            }
-        }
-        plog::get()->setMaxSeverity(config::verbosity.get());
+        auto const desired_action = config::process_args(argc, argv, logger);
         WDLOG(info) << std::format("Running {}", boost::nowide::narrow(boost::dll::program_location().native()));
         WDLOG(trace) << std::format("Commit {}", git_commit);
 
-        if (vm.contains("install")) {
-            InstallService();
-            return EXIT_SUCCESS;
-        }
-        if (vm.contains("uninstall")) {
-            UninstallService();
-            return EXIT_SUCCESS;
+        switch (desired_action) {
+            using enum config::program_action;
+            case help:
+                // Help has already been printed by process_args because it has the argument descriptions.
+                return EXIT_SUCCESS;
+            case install:
+                InstallService();
+                return EXIT_SUCCESS;
+            case uninstall:
+                UninstallService();
+                return EXIT_SUCCESS;
+            default:;
         }
 
         std::wstring const service_name = boost::nowide::widen("SettingsWatchdog");

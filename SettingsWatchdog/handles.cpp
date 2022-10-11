@@ -12,13 +12,13 @@ BaseServiceHandle::BaseServiceHandle(SC_HANDLE const handle, char const* action)
 
 BaseServiceHandle::~BaseServiceHandle()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     CloseServiceHandle(m_handle);
 }
 
 BaseServiceHandle::operator SC_HANDLE() const
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     return m_handle;
 }
 
@@ -43,26 +43,26 @@ AutoCloseHandle::AutoCloseHandle(HANDLE handle): m_handle(handle)
 
 AutoCloseHandle::AutoCloseHandle(AutoCloseHandle&& other) noexcept: m_handle(other.m_handle)
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     other.m_handle = NULL;
 }
 
 AutoCloseHandle::~AutoCloseHandle()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     if (m_handle) [[likely]]
         CloseHandle(m_handle);
 }
 
 HANDLE* AutoCloseHandle::operator&()
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     return &m_handle;
 }
 
 AutoCloseHandle::operator HANDLE() const
 {
-    BOOST_LOG_FUNC();
+    LOG_FUNC();
     return m_handle;
 }
 

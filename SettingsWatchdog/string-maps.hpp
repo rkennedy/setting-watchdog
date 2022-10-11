@@ -1,11 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <string>
 #include <utility>
 
-#include <boost/range/algorithm/find_if.hpp>
 #include <plog/Severity.h>
 
 #include <windows.h>
@@ -33,8 +33,9 @@ std::optional<typename Map::mapped_type> get(Map const& map, T&& key)
 template <typename Map, typename T>
 std::optional<typename Map::key_type> get_key(Map const& map, T&& value)
 {
-    if (auto const it = boost::find_if(map, [&value](auto p) { return p.second == value; }); it != map.cend())
-        [[likely]] {
+    if (auto const it = std::ranges::find(map, std::forward<T>(value), &Map::value_type::second); it != map.cend())
+        [[likely]]
+    {
         return it->first;
     }
     return std::nullopt;

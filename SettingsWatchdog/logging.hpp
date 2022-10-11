@@ -10,6 +10,9 @@ DISABLE_ANALYSIS
 #include <plog/Log.h>
 REENABLE_ANALYSIS
 
+/// <summary>
+/// A helper class for the LOG_FUNC macro to keep track of the currently active function in each thread.
+/// </summary>
 class ScopeMarker
 {
 public:
@@ -17,7 +20,11 @@ public:
     ~ScopeMarker();
 };
 
-#define BOOST_LOG_FUNC()            \
+/// <summary>
+/// Set the currently active function. The most recent instance of this will be included in log messages. When the scope
+/// ends, the previously active function will become active again.
+/// </summary>
+#define LOG_FUNC()                  \
     ScopeMarker const CuRrEnT_ScOpE \
     {                               \
         __FUNCTION__                \
@@ -25,15 +32,34 @@ public:
 
 namespace plog
 {
+    /// <summary>
+    /// An alias for plog::verbose
+    /// </summary>
     auto constexpr trace = verbose;
 
+    /// <summary>
+    /// Stream insertion operator for plog::Severity
+    /// </summary>
+    /// <param name="os">The output stream to write to</param>
+    /// <param name="sev">The severity level</param>
+    /// <returns>The output stream</returns>
     std::basic_ostream<char>& operator<<(std::basic_ostream<char>& os, plog::Severity sev);
 
+    /// <summary>
+    /// Read and validate a plog::Severity command-line argument for Boost.Program_Options.
+    /// </summary>
     void validate(boost::any& v, std::vector<std::string> const& values, plog::Severity* target_type, int);
 
+    /// <summary>
+    /// Convert a plog::Severity to a string.
+    /// </summary>
     std::string to_string(plog::Severity);
 }  // namespace plog
 
+/// <summary>
+/// A std::formatter specialization for using plog::Severity with std::format.
+/// </summary>
+/// <typeparam name="CharT"></typeparam>
 template <class CharT>
 class std::formatter<plog::Severity, CharT>: public std::formatter<std::basic_string<CharT>, CharT>
 {
@@ -47,6 +73,9 @@ public:
 
 #define WDLOG(sev) LOG((plog::sev))
 
+/// <summary>
+/// A class collecting functions for formatting messages in Plog.
+/// </summary>
 class LogFormatter
 {
 public:

@@ -115,9 +115,14 @@
     <ClInclude Include="errors.hpp" />
     <ClInclude Include="logging.hpp" />
     <ClInclude Include="handles.hpp" />
+    <ClInclude Include="memory.hpp" />
     <ClInclude Include="registry.hpp" />
     <ClInclude Include="string-maps.hpp" />
     <ClInclude Include="warnings.hpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="cpp.hint" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
