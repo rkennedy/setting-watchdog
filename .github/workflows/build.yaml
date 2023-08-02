@@ -34,7 +34,7 @@ jobs:
         done < <(git ls-files --modified)
 
     - name: Install & build vcpkg packages
-      uses: lukka/run-vcpkg@v10
+      uses: lukka/run-vcpkg@v11
       id: vcpkg
       with:
         runVcpkgInstall: true
